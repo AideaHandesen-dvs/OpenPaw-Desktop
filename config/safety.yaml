@@ -1,0 +1,32 @@
+# config/safety.yaml - OpenPaw Safety Checker 設定
+# 設計書 Section 7 準拠
+
+# 実行を完全に禁止するパターン（danger_level: 3、即中断）
+blocklist:
+  - "rm -rf /"
+  - "rm -rf ~"
+  - "sudo"
+  - "su "
+  - "dd "
+  - "mkfs"
+  - "> /dev/"
+  - "chmod 777 /"
+
+# danger_level: 2 として扱うコマンド prefix またはパターン
+dangerous:
+  - "rm"
+  - "mv"
+  - "chmod"
+  - "chown"
+  - "kill"
+  - "killall"
+  - "systemctl stop"
+  - "systemctl disable"
+
+# 操作を許可するパスプレフィックス（これ以外は拒否）
+allowed_paths:
+  - "/home/john"
+  - "/tmp"
+
+# 実行タイムアウト（秒）
+timeout: 30

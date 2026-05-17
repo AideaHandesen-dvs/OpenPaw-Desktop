@@ -23,6 +23,9 @@ OpenPaw Desktopは、Linuxデスクトップ環境を安全かつ自動的に操
 | UI | CLI 1回実行（セッション管理なし） |
 | ターゲット環境 | Debian + KDE Plasma |
 | Ollamaの出力形式 | `format: json`（structured output）を使用 |
+| Ollama接続先 | 環境変数 `OLLAMA_URL`（デフォルト: localhost:11434） |
+| LLMモデル   | 環境変数 OLLAMA_MODEL（デフォルト: qwen2.5:7b）   |
+
 
 ---
 
@@ -142,6 +145,7 @@ blocklist:
 # danger_level: 2 として扱うコマンドprefixまたはパターン
 dangerous:
   - "rm"
+  - "mv"
   - "chmod"
   - "chown"
   - "kill"
@@ -231,7 +235,6 @@ openpaw/
 ├─ main.py               # エントリポイント（CLI引数受付）
 ├─ planner.py            # Task Planner（Ollama呼び出し）
 ├─ safety.py             # Safety Checker
-├─ executor.py           # Tool Executor
 ├─ logger.py             # Audit Logger
 ├─ tools/
 │   ├─ shell.py          # shellツール実装
@@ -251,13 +254,13 @@ openpaw/
 ## 12. MVPフェーズ
 
 ### Phase 1（最初に動かすもの）
-- [ ] `main.py`: CLI引数受付、全体フロー制御
-- [ ] `planner.py`: Ollama呼び出し、JSONプラン生成
-- [ ] `safety.py`: danger_level判定、blocklist/allowlistチェック
-- [ ] `tools/shell.py`: bashコマンド実行
-- [ ] `tools/filesystem.py`: cp/mv/rm/mkdir
-- [ ] `logger.py`: jsonl形式でログ保存
-- [ ] HITLの確認プロンプト
+- [x] `main.py`: CLI引数受付、全体フロー制御
+- [x] `planner.py`: Ollama呼び出し、JSONプラン生成
+- [x] `safety.py`: danger_level判定、blocklist/allowlistチェック
+- [x] `tools/shell.py`: bashコマンド実行
+- [x] `tools/filesystem.py`: cp/mv/rm/mkdir
+- [x] `logger.py`: jsonl形式でログ保存
+- [x] HITLの確認プロンプト
 
 ### Phase 2
 - [ ] `tools/dbus.py`: qdbus/busctl統合
@@ -282,8 +285,8 @@ openpaw/
 ### Step 1: 環境セットアップ確認
 新セッション開始時にClaudeへ伝えること：
 ```
-この設計書（openpaw_design_v2.md）でPhase 1の実装を始めてください。
-まず openpaw/ ディレクトリ構成を作り、main.py から書いてください。
+この設計書（DESIGN.md）でPhase 2の実装を始めてください。
+tools/dbus.py の実装から始めてください。
 ```
 
 ### Step 2: 実装順序（推奨）
