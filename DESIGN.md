@@ -334,17 +334,34 @@ openpaw/
 ### Step 1: 環境セットアップ確認
 新セッション開始時にClaudeへ伝えること：
 ```
-この設計書（DESIGN.md）でPhase 3の実装を始めてください。
-tools/gui.py の実装から始めてください。
+この設計書（DESIGN.md）を読んで現状を把握してください。
 ```
 
-### Step 2: 実装順序（推奨）
-1. `logger.py`（一番シンプル、他に依存しない）
-2. `tools/shell.py` + `tools/filesystem.py`
-3. `safety.py`（safety.yamlと合わせて）
-4. `planner.py`（Ollama接続）
-5. `main.py`（全体をつなぐ）
-6. テスト（dry-runで動作確認）
+### Step 2: 実機テスト環境（2026-05-18 構築済み）
+
+| 項目 | 内容 |
+|------|------|
+| 開発機 | gandalfr（Debian 12、ヘッドレス） |
+| テスト用VM | openpaw-kde（KVM、Debian 12 + KDE Plasma） |
+| VMへのSSH | `ssh openpaw-vm`（gandalfr上、パスワードなし） |
+| VMへのGUI接続 | fenrirから `ssh -f -N -L 5902:localhost:5900 john@gandalfr` → Remmina `spice://localhost:5902` |
+| Ollama | durandal:11434（gandalfr上でポートフォワード済み） |
+
+**VM起動手順（gandalfr上）:**
+```bash
+virsh start openpaw-kde
+# Ollama フォワード（未起動の場合）
+ssh -f -N -L 0.0.0.0:11434:durandal:11434 john@durandal
+```
+
+**VM内の実行環境（openpaw-vm上）:**
+```bash
+cd ~/openpaw-desktop
+source .venv-desktop/bin/activate
+export DISPLAY=:1
+export XAUTHORITY=/run/user/1000/xauth_zLUXKt  # 毎回変わる。`echo $XAUTHORITY` で確認
+export OLLAMA_URL=http://10.0.2.2:11434
+```
 
 ### Step 3: 動作確認コマンド例
 ```bash
@@ -356,8 +373,21 @@ python main.py "Downloadsの古いPDFをDocumentsに移動して"
 
 # 確認スキップ（上級者向け）
 python main.py --yes "tmpフォルダを空にして"
+
+# 動作確認済みのコマンド
+python main.py "スクリーンショットを撮って"
+# → ~/.openpaw/screenshots/<timestamp>.png に保存される
 ```
 
-### Step 4: 各セッションの終わりに
+### Step 4: 既知の問題・注意事項
+
+- `XAUTHORITY` のパスはログインのたびに変わる。`echo $XAUTHORITY` で確認してから設定すること
+- qwen2.5:7b は gui ツールの `action` フィールドを `command` に詰め込む癖がある
+  → `planner.py` の `_normalize_gui_step()` で救済済み
+- ydotool 0.1.8 に `scroll` サブコマンドは存在しない → xdotool にフォールバック済み
+- ydotool 0.1.8 に `ydotoold.service` は存在しない。`/dev/uinput` への権限があれば動く
+  → `john` を `input` グループに追加済み（VM内）
+
+### Step 5: 各セッションの終わりに
 - 実装した内容を設計書の該当チェックボックスにチェックを入れる
 - 設計変更があれば設計書を更新してから終了する
