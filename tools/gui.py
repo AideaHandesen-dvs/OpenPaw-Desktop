@@ -239,10 +239,13 @@ def click(
         return _no_input_backend()
 
     if backend == "ydotool":
-        # ydotool: 移動してからクリック（count回繰り返し）
-        move_cmd = f"ydotool mousemove --absolute -x {x} -y {y}"
-        click_cmd = f"ydotool click --count {count} {button}"
-        cmd = f"{move_cmd} && {click_cmd}"
+        # ydotool のボタン番号: 1=left, 2=right, 3=middle
+        # 本 API は 1=左, 2=中, 3=右 なので 2 と 3 を変換する
+        ydotool_btn = {1: 1, 2: 3, 3: 2}[button]
+        # mousemove は <x> <y> のみ（--absolute フラグなし）
+        # click は <button> のみ（--count フラグなし）、count 回ループ
+        click_cmds = " && ".join(f"ydotool click {ydotool_btn}" for _ in range(count))
+        cmd = f"ydotool mousemove {x} {y} && {click_cmds}"
     else:
         # xdotool: 移動＋クリックを1コマンドで
         cmd = (
@@ -270,7 +273,7 @@ def move(x: int, y: int, timeout: int = 30) -> GuiResult:
         return _no_input_backend()
 
     if backend == "ydotool":
-        cmd = f"ydotool mousemove --absolute -x {x} -y {y}"
+        cmd = f"ydotool mousemove {x} {y}"
     else:
         cmd = f"xdotool mousemove {x} {y}"
 
@@ -302,20 +305,17 @@ def scroll(direction: str, amount: int = 3, timeout: int = 30) -> GuiResult:
     if backend is None:
         return _no_input_backend()
 
-    if backend == "ydotool":
-        # axis-y: 正=上スクロール、負=下スクロール
-        # axis-x: 正=左スクロール、負=右スクロール
-        axis_arg = {
-            "up":    f"--axis-y={amount}",
-            "down":  f"--axis-y=-{amount}",
-            "left":  f"--axis-x={amount}",
-            "right": f"--axis-x=-{amount}",
-        }[direction]
-        cmd = f"ydotool scroll {axis_arg}"
-    else:
-        # xdotool: ボタン 4=上, 5=下, 6=左, 7=右
-        btn = {"up": 4, "down": 5, "left": 6, "right": 7}[direction]
-        cmd = f"xdotool click --clearmodifiers --repeat {amount} {btn}"
+    # ydotool に scroll サブコマンドは存在しない（0.1.x 系）
+    # xdotool でスクロールボタン番号をエミュレートする
+    # ydotool が検出されていても scroll は xdotool にフォールバック
+    if not shutil.which("xdotool"):
+        return GuiResult(
+            success=False, output="",
+            error="scroll には xdotool が必要です。sudo apt install xdotool でインストールしてください。",
+        )
+    # xdotool: ボタン 4=上, 5=下, 6=左, 7=右
+    btn = {"up": 4, "down": 5, "left": 6, "right": 7}[direction]
+    cmd = f"xdotool click --clearmodifiers --repeat {amount} {btn}"
 
     result = _run(cmd, timeout)
     if result.success:

@@ -288,11 +288,12 @@ class TestClickAction(unittest.TestCase):
     @patch("tools.gui.subprocess.run")
     @patch("tools.gui.shutil.which", side_effect=lambda x: x if x == "ydotool" else None)
     def test_ydotool_uses_absolute_move(self, _which, mock_run):
-        """ydotool は --absolute で座標を渡す。"""
+        """ydotool mousemove に座標が渡される（--absolute フラグなし）。"""
         mock_run.return_value = _proc_ok()
         click(200, 300)
         cmd = mock_run.call_args[0][0]
-        self.assertIn("--absolute", cmd)
+        self.assertNotIn("--absolute", cmd)  # ydotool 0.1.x には --absolute がない
+        self.assertIn("mousemove", cmd)
         self.assertIn("200", cmd)
         self.assertIn("300", cmd)
 
@@ -398,25 +399,27 @@ class TestScrollAction(unittest.TestCase):
         self.assertIn("amount", r.error)
 
     @patch("tools.gui.subprocess.run")
-    @patch("tools.gui.shutil.which", side_effect=lambda x: x if x == "ydotool" else None)
-    def test_ydotool_scroll_down_uses_negative_y(self, _which, mock_run):
-        """ydotool scroll down は axis-y に負値を使う。"""
+    @patch("tools.gui.shutil.which", side_effect=lambda x: x if x in ("ydotool", "xdotool") else None)
+    def test_ydotool_scroll_falls_back_to_xdotool(self, _which, mock_run):
+        """ydotool に scroll サブコマンドがないため xdotool にフォールバックする。"""
         mock_run.return_value = _proc_ok()
         scroll("down", amount=3)
         cmd = mock_run.call_args[0][0]
-        self.assertIn("axis-y", cmd)
-        self.assertIn("-3", cmd)
+        # ydotool scroll は呼ばれない、xdotool click button5 が呼ばれる
+        self.assertNotIn("ydotool scroll", cmd)
+        self.assertIn("xdotool", cmd)
+        self.assertIn("5", cmd)  # down = button 5
 
     @patch("tools.gui.subprocess.run")
-    @patch("tools.gui.shutil.which", side_effect=lambda x: x if x == "ydotool" else None)
-    def test_ydotool_scroll_up_uses_positive_y(self, _which, mock_run):
-        """ydotool scroll up は axis-y に正値を使う。"""
+    @patch("tools.gui.shutil.which", side_effect=lambda x: x if x in ("ydotool", "xdotool") else None)
+    def test_ydotool_present_scroll_still_uses_xdotool(self, _which, mock_run):
+        """ydotool が検出されていても scroll は xdotool で実行される。"""
         mock_run.return_value = _proc_ok()
         scroll("up", amount=5)
         cmd = mock_run.call_args[0][0]
-        self.assertIn("axis-y", cmd)
-        # "-5" ではなく "5" が含まれることを確認（負のプレフィックスなし）
-        self.assertIn("=5", cmd)
+        self.assertIn("xdotool", cmd)
+        self.assertIn("4", cmd)  # up = button 4
+        self.assertIn("5", cmd)  # --repeat 5
 
     @patch("tools.gui.subprocess.run")
     @patch("tools.gui.shutil.which", side_effect=lambda x: x if x == "xdotool" else None)
@@ -439,7 +442,7 @@ class TestScrollAction(unittest.TestCase):
         self.assertIn("4", cmd)
 
     @patch("tools.gui.subprocess.run")
-    @patch("tools.gui.shutil.which", side_effect=lambda x: x if x == "ydotool" else None)
+    @patch("tools.gui.shutil.which", side_effect=lambda x: x if x in ("ydotool", "xdotool") else None)
     def test_output_shows_direction_and_amount(self, _which, mock_run):
         """output に方向と量が含まれる。"""
         mock_run.return_value = _proc_ok()
@@ -448,9 +451,9 @@ class TestScrollAction(unittest.TestCase):
         self.assertIn("4", r.output)
 
     @patch("tools.gui.subprocess.run")
-    @patch("tools.gui.shutil.which", side_effect=lambda x: x if x == "ydotool" else None)
+    @patch("tools.gui.shutil.which", side_effect=lambda x: x if x in ("ydotool", "xdotool") else None)
     def test_all_valid_directions_accepted(self, _which, mock_run):
-        """up / down / left / right すべて受け付ける。"""
+        """up / down / left / right すべて受け付ける（xdotool 経由）。"""
         mock_run.return_value = _proc_ok()
         for d in ("up", "down", "left", "right"):
             r = scroll(d)
