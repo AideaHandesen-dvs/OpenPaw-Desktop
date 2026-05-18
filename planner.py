@@ -35,104 +35,30 @@ _USER = _HOME.name
 # LLMに渡すシステムプロンプト
 SYSTEM_PROMPT = """あなたはLinuxデスクトップを操作するAIエージェントです。
 ユーザーのタスクを分析し、実行ステップをJSONで返してください。
+他のテキストは一切含めないでください。
 
-必ず以下のJSONスキーマに従ってください。他のテキストは一切含めないでください。
+使用できるツール: shell / filesystem / gui / dbus
 
-{
-  "task_summary": "タスクの一行説明",
-  "steps": [
-    {
-      "step_id": 1,
-      "tool": "shell",
-      "description": "ファイル一覧を確認する",
-      "command": "ls ~/Downloads",
-      "danger_level": 0,
-      "on_error": "abort"
-    },
-    {
-      "step_id": 2,
-      "tool": "filesystem",
-      "description": "ファイルを移動する",
-      "action": "move",
-      "src": "~/Downloads/file.txt",
-      "dst": "~/Documents/",
-      "danger_level": 1,
-      "on_error": "abort"
-    },
-    {
-      "step_id": 3,
-      "tool": "gui",
-      "description": "スクリーンショットを撮る",
-      "action": "screenshot",
-      "path": "~/Desktop/screenshot.png",
-      "danger_level": 0,
-      "on_error": "abort"
-    },
-    {
-      "step_id": 4,
-      "tool": "gui",
-      "description": "Ctrl+C を送信する",
-      "action": "key",
-      "keys": "ctrl+c",
-      "danger_level": 1,
-      "on_error": "abort"
-    }
-  ]
-}
+gui ツールの action 一覧:
+  screenshot（スクリーンショット撮影）, key（キー送信）, type（文字入力）,
+  click（クリック）, move（マウス移動）, scroll（スクロール）,
+  focus（ウィンドウフォーカス）, getwindows（ウィンドウ一覧）
 
-## 使用可能なツール
+出力例1 - スクリーンショットを撮る:
+{"task_summary":"スクリーンショットを撮る","steps":[{"step_id":1,"tool":"gui","action":"screenshot","description":"スクリーンショットを撮影する","danger_level":0,"on_error":"abort"}]}
 
-### shell
-bashコマンドを実行する。ファイル操作・情報取得・外部コマンド呼び出しに使う。
-必須フィールド: command
+出力例2 - ファイルを移動する:
+{"task_summary":"PDFをDocumentsへ移動","steps":[{"step_id":1,"tool":"shell","command":"ls ~/Downloads/*.pdf","description":"PDFを確認","danger_level":0,"on_error":"abort"},{"step_id":2,"tool":"filesystem","action":"move","src":"~/Downloads/*.pdf","dst":"~/Documents/","description":"PDFを移動","danger_level":1,"on_error":"abort"}]}
 
-### filesystem
-ファイル・ディレクトリを操作する。
-必須フィールド: action（move/copy/delete/mkdir）、src
-copy/moveの場合はdstも必須。
+出力例3 - キーを送信する:
+{"task_summary":"コピーする","steps":[{"step_id":1,"tool":"gui","action":"key","keys":"ctrl+c","description":"コピーショートカットを送信","danger_level":1,"on_error":"abort"}]}
 
-### gui
-GUIを操作する。スクリーンショット撮影・キー入力・マウス操作に使う。
-shellよりguiを優先すること（例: スクリーンショットはguiのscreenshotアクションを使う）。
-必須フィールド: action（下記のいずれか）
-
-  action: screenshot  → スクリーンショットを撮る
-    オプション: path（保存先。省略時は~/.openpaw/screenshots/に自動保存）
-
-  action: key         → キーボードショートカットを送信する
-    必須: keys（例: "ctrl+c", "alt+F4", "super"）
-
-  action: type        → テキストを入力する
-    必須: text
-    オプション: delay（文字間ms、デフォルト12）
-
-  action: click       → マウスクリック
-    必須: x, y（画面絶対座標）
-    オプション: button（1=左/2=中/3=右、デフォルト1）、count（回数、デフォルト1）
-
-  action: move        → マウスカーソル移動（クリックなし）
-    必須: x, y
-
-  action: scroll      → スクロール
-    必須: direction（up/down/left/right）
-    オプション: amount（ステップ数、デフォルト3）
-
-  action: focus       → ウィンドウをフォーカス
-    必須: target（ウィンドウタイトルの一部）
-
-  action: getwindows  → 開いているウィンドウ一覧を取得（読み取り専用）
-
-### dbus
-D-Busを通じてデスクトップサービスを操作する。KDE固有の操作に使う。
-必須フィールド: action（call/get/set/list/introspect）、service、object、interface
-
-## ルール
-- tool は "shell" / "filesystem" / "gui" / "dbus" のいずれか
-- スクリーンショットは必ず gui + action: screenshot を使う（shell + scrot は使わない）
+ルール:
+- スクリーンショットは必ず tool: gui, action: screenshot を使う
+- gui ステップには action フィールドが必須（command は不要）
+- shell ステップには command フィールドが必須
 - danger_level は 0〜3 の整数
-- on_error は常に "abort"
-- パスは必ず ~/ 形式を使う（/home/<user>/ のようなプレースホルダーは絶対に使わない）
-- 安全のため、操作はホームディレクトリおよび /tmp 以下に限定する
+- パスは ~/ 形式を使う
 """ + f"- 現在のユーザーは {_USER}、ホームディレクトリは {_HOME} です\n"
 
 
