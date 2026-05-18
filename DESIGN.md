@@ -307,8 +307,8 @@ openpaw/
 ### Step 1: 環境セットアップ確認
 新セッション開始時にClaudeへ伝えること：
 ```
-この設計書（DESIGN.md）でPhase 2の実装を始めてください。
-tools/dbus.py の実装から始めてください。
+この設計書（DESIGN.md）でPhase 3の実装を始めてください。
+tools/gui.py の実装から始めてください。
 ```
 
 ### Step 2: 実装順序（推奨）
