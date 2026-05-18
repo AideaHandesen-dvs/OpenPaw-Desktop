@@ -44,9 +44,37 @@ SYSTEM_PROMPT = """あなたはLinuxデスクトップを操作するAIエージ
     {
       "step_id": 1,
       "tool": "shell",
-      "description": "このステップが何をするかの説明",
-      "command": "実行するbashコマンド",
+      "description": "ファイル一覧を確認する",
+      "command": "ls ~/Downloads",
       "danger_level": 0,
+      "on_error": "abort"
+    },
+    {
+      "step_id": 2,
+      "tool": "filesystem",
+      "description": "ファイルを移動する",
+      "action": "move",
+      "src": "~/Downloads/file.txt",
+      "dst": "~/Documents/",
+      "danger_level": 1,
+      "on_error": "abort"
+    },
+    {
+      "step_id": 3,
+      "tool": "gui",
+      "description": "スクリーンショットを撮る",
+      "action": "screenshot",
+      "path": "~/Desktop/screenshot.png",
+      "danger_level": 0,
+      "on_error": "abort"
+    },
+    {
+      "step_id": 4,
+      "tool": "gui",
+      "description": "Ctrl+C を送信する",
+      "action": "key",
+      "keys": "ctrl+c",
+      "danger_level": 1,
       "on_error": "abort"
     }
   ]
