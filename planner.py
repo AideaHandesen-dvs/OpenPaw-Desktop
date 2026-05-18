@@ -55,6 +55,9 @@ gui ツールの action 一覧:
 正しい例（shell）:
 {"task_summary":"ファイル確認","steps":[{"step_id":1,"tool":"shell","command":"ls ~/Downloads","description":"一覧確認","danger_level":0,"on_error":"abort"}]}
 
+
+正しい例（filesystem）:
+{"task_summary":"PDFをDocumentsへ移動","steps":[{"step_id":1,"tool":"shell","command":"ls ~/Downloads/*.pdf","description":"PDFを確認","danger_level":0,"on_error":"abort"},{"step_id":2,"tool":"filesystem","action":"move","src":"~/Downloads/*.pdf","dst":"~/Documents/","description":"PDFを移動","danger_level":1,"on_error":"abort"}]}
 誤った例（gui なのに command を使っている）:
 {"step_id":1,"tool":"gui","command":"gui:action=screenshot"} ← これは間違い
 
