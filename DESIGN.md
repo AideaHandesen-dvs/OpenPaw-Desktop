@@ -405,3 +405,14 @@ python main.py "スクリーンショットを撮って"
 **影響:** 条件付き操作（「古いファイルだけ」「サイズが大きいものだけ」等）が
 すべて意図通りに動かない。  
 **対処方針:** 未定（現フェーズスコープ外）
+
+
+### [BUG-003] SYSTEM_PROMPTのdbus例のメソッドが実在しない
+
+**発見日:** 2026-05-19
+**再現手順:** `python main.py "KRunnerの検索履歴をクリアして"`
+**症状:** CleanHistory メソッドが存在しないためDBus呼び出しが失敗する。
+**原因:** DESIGN.mdおよびSYSTEM_PROMPTの例として使用した
+org.kde.krunner.App.CleanHistory がこの環境のKRunnerに存在しない。
+**実際のメソッド:** display / query / toggleDisplay / switchUser 等
+**対処方針:** SYSTEM_PROMPTのdbus例を実在するメソッドに差し替える
