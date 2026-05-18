@@ -22,6 +22,7 @@ from planner import TaskPlanner, PlannerError
 from safety import SafetyChecker
 from tools import shell as shell_tool
 from tools import filesystem as fs_tool
+from tools import dbus as dbus_tool
 
 
 # ------------------------------------------------------------------ #
@@ -64,6 +65,20 @@ def print_plan(task_summary: str, steps: list[dict]) -> None:
                 print(f"  操作: {action} {src} → {dst}")
             else:
                 print(f"  操作: {action} {src}")
+        elif tool == "dbus":
+            action    = step.get("action", "")
+            service   = step.get("service", "")
+            interface = step.get("interface", "")
+            method    = step.get("method", step.get("property", ""))
+            bus       = step.get("bus", "session")
+            if action == "introspect":
+                print(f"  操作: introspect {service}")
+                if interface:
+                    print(f"  対象: {interface} ({bus} bus)")
+            else:
+                print(f"  操作: {action} {service}")
+                if interface and method:
+                    print(f"  対象: {interface}.{method} ({bus} bus)")
 
         print(f"  危険度: {LEVEL_LABEL.get(level, str(level))}")
         print()
@@ -83,7 +98,7 @@ def ask_confirmation(task_summary: str) -> bool:
 # Tool Executor
 # ------------------------------------------------------------------ #
 
-def execute_step(step: dict) -> tuple[bool, str, str | None]:
+def execute_step(step: dict, timeout: int = 30) -> tuple[bool, str, str | None]:
     """
     1ステップを実行し (success, output, error) を返す。
 
@@ -111,6 +126,36 @@ def execute_step(step: dict) -> tuple[bool, str, str | None]:
             r = fs_tool.mkdir(src)
         else:
             return False, "", f"未知の action: {action}"
+
+        return r.success, r.output, r.error
+
+    if tool == "dbus":
+        action    = step.get("action", "")
+        service   = step.get("service", "")
+        obj       = step.get("object", "")
+        interface = step.get("interface", "")
+        args      = step.get("args", [])
+        arg_types = step.get("arg_types", [])
+        bus       = step.get("bus", "session")
+
+        if action == "call":
+            r = dbus_tool.call(service, obj, interface,
+                               step.get("method", ""),
+                               args, arg_types, bus, timeout)
+        elif action == "get":
+            r = dbus_tool.get_property(service, obj, interface,
+                                       step.get("property", ""),
+                                       bus, timeout)
+        elif action == "set":
+            r = dbus_tool.set_property(service, obj, interface,
+                                       step.get("property", ""),
+                                       args, arg_types, bus, timeout)
+        elif action == "list":
+            r = dbus_tool.list_services(bus, timeout)
+        elif action == "introspect":
+            r = dbus_tool.introspect(service, obj, interface, bus, timeout)
+        else:
+            return False, "", f"未知の dbus action: {action}"
 
         return r.success, r.output, r.error
 
@@ -195,7 +240,7 @@ def run(task: str, dry_run: bool = False, yes: bool = False) -> int:
 
         print(f"[実行中] ステップ {sid}: {step['description']}")
 
-        success, output, error = execute_step(step)
+        success, output, error = execute_step(step, timeout=checker.timeout)
 
         status = "success" if success else "failure"
 

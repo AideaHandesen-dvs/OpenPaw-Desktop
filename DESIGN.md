@@ -26,7 +26,6 @@ OpenPaw Desktopは、Linuxデスクトップ環境を安全かつ自動的に操
 | Ollama接続先 | 環境変数 `OLLAMA_URL`（デフォルト: localhost:11434） |
 | LLMモデル   | 環境変数 OLLAMA_MODEL（デフォルト: qwen2.5:7b）   |
 
-
 ---
 
 ## 3. 設計目標
@@ -92,6 +91,21 @@ LLMが生成するJSONの構造。Ollamaの`format: json`で強制する。
       "dst": "~/Documents/",
       "danger_level": 1,
       "on_error": "abort"
+    },
+    {
+      "step_id": 3,
+      "tool": "dbus",
+      "description": "KRunnerの検索履歴をクリア",
+      "action": "call",
+      "service": "org.kde.krunner",
+      "object": "/App",
+      "interface": "org.kde.krunner.App",
+      "method": "CleanHistory",
+      "args": [],
+      "arg_types": [],
+      "bus": "session",
+      "danger_level": 1,
+      "on_error": "abort"
     }
   ]
 }
@@ -107,11 +121,19 @@ LLMが生成するJSONの構造。Ollamaの`format: json`で強制する。
 | `tool` | enum | ✅ | `shell` / `filesystem` / `dbus` / `gui` |
 | `description` | string | ✅ | ステップの人間向け説明 |
 | `command` | string | shellのみ必須 | 実行するbashコマンド |
-| `action` | string | filesystemのみ必須 | `copy` / `move` / `delete` / `mkdir` |
 | `src` | string | filesystemのみ必須 | 操作元パス |
 | `dst` | string | copy/moveのみ必須 | 操作先パス |
 | `danger_level` | int | ✅ | 0〜3（下記参照） |
 | `on_error` | enum | ✅ | 現在は`abort`のみ |
+| `action` | string | filesystem/dbusのみ必須 | filesystem: `copy` / `move` / `delete` / `mkdir`<br>dbus: `call` / `get` / `set` / `list` / `introspect` |
+| `service`   | string | dbusのみ必須      | D-Busバス名 e.g. `org.kde.krunner` |
+| `object`    | string | dbusのみ必須      | オブジェクトパス e.g. `/App` |
+| `interface` | string | dbusのみ必須      | インターフェース名 e.g. `org.kde.krunner.App` |
+| `method`    | string | `call`のみ必須    | 呼び出すメソッド名 |
+| `property`  | string | `get`/`set`のみ必須 | 対象プロパティ名 |
+| `args`      | array  | 任意              | メソッド/プロパティへの引数リスト |
+| `arg_types` | array  | 任意              | busctl型シグネチャ e.g. `["s","i"]`。省略時はintrospectで自動取得。複合型（`a`系）は未対応 |
+| `bus`       | string | 任意              | `session`（デフォルト）または `system` |
 
 ---
 
@@ -263,7 +285,7 @@ openpaw/
 - [x] HITLの確認プロンプト
 
 ### Phase 2
-- [ ] `tools/dbus.py`: qdbus/busctl統合
+- [x] `tools/dbus.py`: qdbus/busctl統合（auto-introspect, introspect アクション含む）
 
 ### Phase 3
 - [ ] `tools/gui.py`: ydotool / AT-SPI（KDE/Debian限定、保証なし）

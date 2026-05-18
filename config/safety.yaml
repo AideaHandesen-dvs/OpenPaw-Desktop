@@ -30,3 +30,12 @@ allowed_paths:
 
 # 実行タイムアウト（秒）
 timeout: 30
+
+# D-Bus: 操作を完全に禁止するサービス（danger_level: 3、即中断）
+# システムの根幹に触れる・シャットダウン系・ディスク破壊系を列挙
+dbus_blocked_services:
+  - "org.freedesktop.systemd1"    # systemd 直接操作
+  - "org.freedesktop.login1"      # ログアウト・シャットダウン
+  - "org.freedesktop.UDisks2"     # ディスクのフォーマット・マウント操作
+  - "org.freedesktop.PolicyKit1"  # 権限昇格
+  - "org.freedesktop.Hal"         # 旧来の HAL

@@ -62,10 +62,11 @@ class SafetyChecker:
         with open(path, encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
 
-        self._blocklist: list[str]      = cfg.get("blocklist", [])
-        self._dangerous: list[str]      = cfg.get("dangerous", [])
-        self._allowed_paths: list[str]  = cfg.get("allowed_paths", [])
-        self.timeout: int               = int(cfg.get("timeout", 30))
+        self._blocklist: list[str]           = cfg.get("blocklist", [])
+        self._dangerous: list[str]           = cfg.get("dangerous", [])
+        self._allowed_paths: list[str]       = cfg.get("allowed_paths", [])
+        self._dbus_blocked_services: list[str] = cfg.get("dbus_blocked_services", [])
+        self.timeout: int                    = int(cfg.get("timeout", 30))
 
     # ------------------------------------------------------------------ #
     # 公開 API
@@ -91,6 +92,10 @@ class SafetyChecker:
                 blocked=True,
                 reason=f"Blocked by blocklist: {command!r}",
             )
+
+        # ---- 1.5. dbus サービスブロック --------------------------- #
+        if tool == "dbus":
+            return self._check_dbus(step)
 
         # ---- 2. パス制限チェック ----------------------------------- #
         paths_to_check = [p for p in (src, dst) if p]
@@ -190,3 +195,47 @@ class SafetyChecker:
                     return True
 
         return False
+
+    def _check_dbus(self, step: dict) -> CheckResult:
+        """
+        dbus ツール固有の安全性チェック。
+
+        チェック順:
+          1. ブロック対象サービス → Level 3、blocked
+          2. action == set        → Level 2（プロパティ変更）
+          3. action == call       → Level 1（メソッド呼び出し）
+          4. action == get / list → Level 0（読み取り専用）
+        """
+        service = step.get("service", "")
+        action  = step.get("action", "")
+
+        # ブロック対象サービス
+        if service and service in self._dbus_blocked_services:
+            return CheckResult(
+                danger_level=3,
+                blocked=True,
+                reason=f"D-Bus service blocked: {service!r}",
+            )
+
+        # set はプロパティ変更 → Level 2
+        if action == "set":
+            return CheckResult(
+                danger_level=2,
+                blocked=False,
+                reason="D-Bus set-property operation",
+            )
+
+        # call はメソッド呼び出し → Level 1
+        if action == "call":
+            return CheckResult(
+                danger_level=1,
+                blocked=False,
+                reason=None,
+            )
+
+        # get / list は読み取り → Level 0
+        return CheckResult(
+            danger_level=0,
+            blocked=False,
+            reason=None,
+        )
