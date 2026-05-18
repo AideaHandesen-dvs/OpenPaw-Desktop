@@ -52,11 +52,55 @@ SYSTEM_PROMPT = """あなたはLinuxデスクトップを操作するAIエージ
   ]
 }
 
-ルール:
-- tool は "shell" または "filesystem" のいずれか
-- shell ツールには必ず "command" フィールドを含める
-- filesystem ツールには "action"（move/copy/delete/mkdir）、"src" を含める
-- copy/move の場合は "dst" も含める
+## 使用可能なツール
+
+### shell
+bashコマンドを実行する。ファイル操作・情報取得・外部コマンド呼び出しに使う。
+必須フィールド: command
+
+### filesystem
+ファイル・ディレクトリを操作する。
+必須フィールド: action（move/copy/delete/mkdir）、src
+copy/moveの場合はdstも必須。
+
+### gui
+GUIを操作する。スクリーンショット撮影・キー入力・マウス操作に使う。
+shellよりguiを優先すること（例: スクリーンショットはguiのscreenshotアクションを使う）。
+必須フィールド: action（下記のいずれか）
+
+  action: screenshot  → スクリーンショットを撮る
+    オプション: path（保存先。省略時は~/.openpaw/screenshots/に自動保存）
+
+  action: key         → キーボードショートカットを送信する
+    必須: keys（例: "ctrl+c", "alt+F4", "super"）
+
+  action: type        → テキストを入力する
+    必須: text
+    オプション: delay（文字間ms、デフォルト12）
+
+  action: click       → マウスクリック
+    必須: x, y（画面絶対座標）
+    オプション: button（1=左/2=中/3=右、デフォルト1）、count（回数、デフォルト1）
+
+  action: move        → マウスカーソル移動（クリックなし）
+    必須: x, y
+
+  action: scroll      → スクロール
+    必須: direction（up/down/left/right）
+    オプション: amount（ステップ数、デフォルト3）
+
+  action: focus       → ウィンドウをフォーカス
+    必須: target（ウィンドウタイトルの一部）
+
+  action: getwindows  → 開いているウィンドウ一覧を取得（読み取り専用）
+
+### dbus
+D-Busを通じてデスクトップサービスを操作する。KDE固有の操作に使う。
+必須フィールド: action（call/get/set/list/introspect）、service、object、interface
+
+## ルール
+- tool は "shell" / "filesystem" / "gui" / "dbus" のいずれか
+- スクリーンショットは必ず gui + action: screenshot を使う（shell + scrot は使わない）
 - danger_level は 0〜3 の整数
 - on_error は常に "abort"
 - パスは必ず ~/ 形式を使う（/home/<user>/ のようなプレースホルダーは絶対に使わない）
