@@ -23,6 +23,7 @@ from safety import SafetyChecker
 from tools import shell as shell_tool
 from tools import filesystem as fs_tool
 from tools import dbus as dbus_tool
+from tools import gui as gui_tool
 
 
 # ------------------------------------------------------------------ #
@@ -79,6 +80,33 @@ def print_plan(task_summary: str, steps: list[dict]) -> None:
                 print(f"  操作: {action} {service}")
                 if interface and method:
                     print(f"  対象: {interface}.{method} ({bus} bus)")
+
+        elif tool == "gui":
+            action = step.get("action", "")
+            if action == "key":
+                print(f"  操作: key {step.get('keys', '')}")
+            elif action == "type":
+                text = step.get("text", "")
+                preview = text[:40] + ("..." if len(text) > 40 else "")
+                print(f"  操作: type {preview!r}")
+            elif action == "click":
+                btn_name = {1: "左", 2: "中", 3: "右"}.get(step.get("button", 1), "?")
+                count = step.get("count", 1)
+                times = f" × {count}" if count > 1 else ""
+                print(f"  操作: click({btn_name}) x={step.get('x', 0)} y={step.get('y', 0)}{times}")
+            elif action == "move":
+                print(f"  操作: move x={step.get('x', 0)} y={step.get('y', 0)}")
+            elif action == "scroll":
+                print(f"  操作: scroll {step.get('direction', '')} × {step.get('amount', 3)}")
+            elif action == "focus":
+                print(f"  操作: focus {step.get('target', '')!r}")
+            elif action == "screenshot":
+                path = step.get("path") or "~/.openpaw/screenshots/<timestamp>.png"
+                print(f"  操作: screenshot → {path}")
+            elif action == "getwindows":
+                print(f"  操作: getwindows（ウィンドウ一覧取得）")
+            else:
+                print(f"  操作: {action}")
 
         print(f"  危険度: {LEVEL_LABEL.get(level, str(level))}")
         print()
@@ -156,6 +184,33 @@ def execute_step(step: dict, timeout: int = 30) -> tuple[bool, str, str | None]:
             r = dbus_tool.introspect(service, obj, interface, bus, timeout)
         else:
             return False, "", f"未知の dbus action: {action}"
+
+        return r.success, r.output, r.error
+
+    if tool == "gui":
+        action = step.get("action", "")
+
+        if action == "key":
+            r = gui_tool.key(step.get("keys", ""), timeout)
+        elif action == "type":
+            r = gui_tool.type_text(step.get("text", ""), step.get("delay", 12), timeout)
+        elif action == "click":
+            r = gui_tool.click(
+                step.get("x", 0), step.get("y", 0),
+                step.get("button", 1), step.get("count", 1), timeout,
+            )
+        elif action == "move":
+            r = gui_tool.move(step.get("x", 0), step.get("y", 0), timeout)
+        elif action == "scroll":
+            r = gui_tool.scroll(step.get("direction", "down"), step.get("amount", 3), timeout)
+        elif action == "focus":
+            r = gui_tool.focus_window(step.get("target", ""), timeout)
+        elif action == "screenshot":
+            r = gui_tool.screenshot(step.get("path"), timeout)
+        elif action == "getwindows":
+            r = gui_tool.get_windows(timeout)
+        else:
+            return False, "", f"未知の gui action: {action}"
 
         return r.success, r.output, r.error
 

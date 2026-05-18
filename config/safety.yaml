@@ -39,3 +39,16 @@ dbus_blocked_services:
   - "org.freedesktop.UDisks2"     # ディスクのフォーマット・マウント操作
   - "org.freedesktop.PolicyKit1"  # 権限昇格
   - "org.freedesktop.Hal"         # 旧来の HAL
+
+# GUI: 実行を完全に禁止するキーコンビネーション（danger_level: 3、即中断）
+gui_blocked_keys:
+  - "ctrl+alt+Delete"       # SysRq / セッション終了
+  - "ctrl+alt+BackSpace"    # Xサーバー強制終了（Debian デフォルト無効だが念のため）
+  - "ctrl+alt+F1"           # VT切り替え
+  - "ctrl+alt+F2"
+  - "ctrl+alt+F3"
+
+# GUI: danger_level: 2 として扱うキーコンビネーション
+gui_dangerous_keys:
+  - "super+l"               # 画面ロック（意図せずロックアウトを防ぐ）
+  - "ctrl+alt"              # VT切り替え系のプレフィックス（上記ブロック以外）

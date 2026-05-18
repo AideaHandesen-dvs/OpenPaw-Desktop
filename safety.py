@@ -66,6 +66,8 @@ class SafetyChecker:
         self._dangerous: list[str]           = cfg.get("dangerous", [])
         self._allowed_paths: list[str]       = cfg.get("allowed_paths", [])
         self._dbus_blocked_services: list[str] = cfg.get("dbus_blocked_services", [])
+        self._gui_blocked_keys: list[str]    = cfg.get("gui_blocked_keys", [])
+        self._gui_dangerous_keys: list[str]  = cfg.get("gui_dangerous_keys", [])
         self.timeout: int                    = int(cfg.get("timeout", 30))
 
     # ------------------------------------------------------------------ #
@@ -96,6 +98,10 @@ class SafetyChecker:
         # ---- 1.5. dbus サービスブロック --------------------------- #
         if tool == "dbus":
             return self._check_dbus(step)
+
+        # ---- 1.6. gui アクションチェック -------------------------- #
+        if tool == "gui":
+            return self._check_gui(step)
 
         # ---- 2. パス制限チェック ----------------------------------- #
         paths_to_check = [p for p in (src, dst) if p]
@@ -236,6 +242,54 @@ class SafetyChecker:
         # get / list は読み取り → Level 0
         return CheckResult(
             danger_level=0,
+            blocked=False,
+            reason=None,
+        )
+
+    def _check_gui(self, step: dict) -> CheckResult:
+        """
+        gui ツール固有の安全性チェック。
+
+        チェック順:
+          1. gui_blocked_keys に一致するキー → Level 3、blocked
+          2. gui_dangerous_keys に一致するキー → Level 2
+          3. 読み取り専用アクション (getwindows / screenshot / move) → Level 0
+          4. 入力系アクション (key / type / click / scroll / focus) → Level 1
+        """
+        action = step.get("action", "")
+        keys   = step.get("keys", "")
+
+        # ---- 1. ブロック対象キーコンビネーション ------------------- #
+        for blocked in self._gui_blocked_keys:
+            if blocked.lower() in keys.lower():
+                return CheckResult(
+                    danger_level=3,
+                    blocked=True,
+                    reason=f"GUI key blocked by config: {keys!r}",
+                )
+
+        # ---- 2. 危険キーコンビネーション → Level 2 ----------------- #
+        for dangerous in self._gui_dangerous_keys:
+            if dangerous.lower() in keys.lower():
+                return CheckResult(
+                    danger_level=2,
+                    blocked=False,
+                    reason=f"GUI dangerous key combination: {keys!r}",
+                )
+
+        # ---- 3. 読み取り専用アクション → Level 0 ------------------- #
+        read_only_actions = {"getwindows", "screenshot", "move"}
+        if action in read_only_actions:
+            return CheckResult(
+                danger_level=0,
+                blocked=False,
+                reason=None,
+            )
+
+        # ---- 4. 入力系アクション → Level 1 ------------------------- #
+        # key / type / click / scroll / focus はユーザー確認が必要
+        return CheckResult(
+            danger_level=1,
             blocked=False,
             reason=None,
         )

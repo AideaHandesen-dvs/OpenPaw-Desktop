@@ -135,6 +135,33 @@ LLMが生成するJSONの構造。Ollamaの`format: json`で強制する。
 | `arg_types` | array  | 任意              | busctl型シグネチャ e.g. `["s","i"]`。省略時はintrospectで自動取得。複合型（`a`系）は未対応 |
 | `bus`       | string | 任意              | `session`（デフォルト）または `system` |
 
+#### gui ツール固有フィールド
+
+| フィールド  | 型     | 必須条件                        | 説明 |
+|------------|--------|-------------------------------|------|
+| `action`   | enum   | ✅                             | `key` / `type` / `click` / `move` / `scroll` / `focus` / `screenshot` / `getwindows` |
+| `keys`     | string | `key`のみ必須                  | xdotool形式のキー名 e.g. `"ctrl+c"`, `"Return"`, `"super+d"` |
+| `text`     | string | `type`のみ必須                 | 入力するテキスト |
+| `delay`    | int    | 任意                           | `type` の文字間ディレイ（ms、デフォルト12） |
+| `x`        | int    | `click`/`move`のみ必須         | 画面X座標（絶対座標） |
+| `y`        | int    | `click`/`move`のみ必須         | 画面Y座標（絶対座標） |
+| `button`   | int    | 任意                           | クリックボタン 1=左 2=中 3=右（デフォルト1） |
+| `count`    | int    | 任意                           | クリック回数（デフォルト1、ダブルクリックは2） |
+| `direction`| string | `scroll`のみ必須               | `up` / `down` / `left` / `right` |
+| `amount`   | int    | 任意                           | スクロール量（ステップ数、デフォルト3） |
+| `target`   | string | `focus`のみ必須                | ウィンドウタイトル（部分一致） |
+| `path`     | string | 任意                           | `screenshot` の保存先（省略時は `~/.openpaw/screenshots/<timestamp>.png`） |
+
+#### gui バックエンド優先順位
+
+| 機能                         | 第1候補（Wayland） | 第2候補（X11）    |
+|-----------------------------|--------------------|------------------|
+| key / type / click / move / scroll | ydotool      | xdotool          |
+| focus / getwindows          | wmctrl             | xdotool          |
+| screenshot                  | scrot              | spectacle / import |
+
+> **注意**: ydotool は `ydotoold` デーモンの起動が必要。xdotool は X11 セッション専用。
+
 ---
 
 ## 6. 危険度レベル定義
@@ -288,7 +315,7 @@ openpaw/
 - [x] `tools/dbus.py`: qdbus/busctl統合（auto-introspect, introspect アクション含む）
 
 ### Phase 3
-- [ ] `tools/gui.py`: ydotool / AT-SPI（KDE/Debian限定、保証なし）
+- [x] `tools/gui.py`: ydotool / AT-SPI（KDE/Debian限定、保証なし）
 
 ---
 
