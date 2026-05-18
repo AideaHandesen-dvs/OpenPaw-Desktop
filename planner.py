@@ -44,14 +44,22 @@ gui ツールの action 一覧:
   click（クリック）, move（マウス移動）, scroll（スクロール）,
   focus（ウィンドウフォーカス）, getwindows（ウィンドウ一覧）
 
-出力例1 - スクリーンショットを撮る:
+重要: tool が "gui" のステップは "action" フィールドを使う。"command" フィールドは使わない。
+
+正しい例（gui/screenshot）:
 {"task_summary":"スクリーンショットを撮る","steps":[{"step_id":1,"tool":"gui","action":"screenshot","description":"スクリーンショットを撮影する","danger_level":0,"on_error":"abort"}]}
 
-出力例2 - ファイルを移動する:
-{"task_summary":"PDFをDocumentsへ移動","steps":[{"step_id":1,"tool":"shell","command":"ls ~/Downloads/*.pdf","description":"PDFを確認","danger_level":0,"on_error":"abort"},{"step_id":2,"tool":"filesystem","action":"move","src":"~/Downloads/*.pdf","dst":"~/Documents/","description":"PDFを移動","danger_level":1,"on_error":"abort"}]}
+正しい例（gui/key）:
+{"task_summary":"コピーする","steps":[{"step_id":1,"tool":"gui","action":"key","keys":"ctrl+c","description":"コピー","danger_level":1,"on_error":"abort"}]}
 
-出力例3 - キーを送信する:
-{"task_summary":"コピーする","steps":[{"step_id":1,"tool":"gui","action":"key","keys":"ctrl+c","description":"コピーショートカットを送信","danger_level":1,"on_error":"abort"}]}
+正しい例（shell）:
+{"task_summary":"ファイル確認","steps":[{"step_id":1,"tool":"shell","command":"ls ~/Downloads","description":"一覧確認","danger_level":0,"on_error":"abort"}]}
+
+誤った例（gui なのに command を使っている）:
+{"step_id":1,"tool":"gui","command":"gui:action=screenshot"} ← これは間違い
+
+正しい例（gui なのに action を使っている）:
+{"step_id":1,"tool":"gui","action":"screenshot"} ← これが正しい
 
 ルール:
 - スクリーンショットは必ず tool: gui, action: screenshot を使う
@@ -186,6 +194,10 @@ class TaskPlanner:
         if len(data["steps"]) == 0:
             raise PlannerError("steps が空です")
 
+        # gui ステップの正規化（LLM が command に詰め込んだ場合の救済）
+        for step in data["steps"]:
+            self._normalize_gui_step(step)
+
         # 各ステップのバリデーション
         for i, step in enumerate(data["steps"], 1):
             self._validate_step(step, i)
@@ -195,6 +207,39 @@ class TaskPlanner:
             steps=data["steps"],
             raw=raw,
         )
+
+    def _normalize_gui_step(self, step: dict) -> None:
+        """
+        LLM が gui ツールで action を command に詰め込んだ場合に救済する。
+        例: {"tool":"gui","command":"gui:screenshot"} → {"tool":"gui","action":"screenshot"}
+        """
+        if step.get("tool") != "gui":
+            return
+        if "action" in step:
+            return  # 既に正しい形式
+
+        # command フィールドから action を推定する
+        command = step.pop("command", "") or ""
+        command_lower = command.lower()
+
+        # "gui:screenshot" / "screenshot" / "gui:action=screenshot" などに対応
+        action_map = {
+            "screenshot": "screenshot",
+            "getwindows": "getwindows",
+            "key":        "key",
+            "type":       "type",
+            "click":      "click",
+            "move":       "move",
+            "scroll":     "scroll",
+            "focus":      "focus",
+        }
+        for keyword, action in action_map.items():
+            if keyword in command_lower:
+                step["action"] = action
+                return
+
+        # 推定できなければ screenshot をデフォルトとして補完
+        step["action"] = "screenshot"
 
     def _validate_step(self, step: dict, index: int) -> None:
         """1ステップのフィールドを検証する。"""
