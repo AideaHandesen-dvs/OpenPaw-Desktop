@@ -95,12 +95,12 @@ LLMが生成するJSONの構造。Ollamaの`format: json`で強制する。
     {
       "step_id": 3,
       "tool": "dbus",
-      "description": "KRunnerの検索履歴をクリア",
+      "description": "KRunnerを開閉する",
       "action": "call",
       "service": "org.kde.krunner",
       "object": "/App",
       "interface": "org.kde.krunner.App",
-      "method": "CleanHistory",
+      "method": "toggleDisplay",
       "args": [],
       "arg_types": [],
       "bus": "session",
@@ -407,15 +407,15 @@ python main.py "スクリーンショットを撮って"
 **対処方針:** 未定（現フェーズスコープ外）
 
 
-### [BUG-003] SYSTEM_PROMPTのdbus例のメソッドが実在しない
+### ~~[BUG-003] SYSTEM_PROMPTのdbus例のメソッドが実在しない~~ ✅ 解決済み
 
-**発見日:** 2026-05-19
-**再現手順:** `python main.py "KRunnerの検索履歴をクリアして"`
-**症状:** CleanHistory メソッドが存在しないためDBus呼び出しが失敗する。
-**原因:** DESIGN.mdおよびSYSTEM_PROMPTの例として使用した
-org.kde.krunner.App.CleanHistory がこの環境のKRunnerに存在しない。
-**実際のメソッド:** display / query / toggleDisplay / switchUser 等
-**対処方針:** SYSTEM_PROMPTのdbus例を実在するメソッドに差し替える
+**発見日:** 2026-05-19  
+**解決日:** 2026-05-19  
+**原因:** DESIGN.md および SYSTEM_PROMPT の例として使用した
+org.kde.krunner.App.CleanHistory がこの環境のKRunnerに存在しなかった。  
+**対処:** SYSTEM_PROMPT の dbus 例を `toggleDisplay`（KRunner開閉）に差し替え。
+`task_summary` / `description` も実際の動作に合わせて修正。`arg_types: []` を例に追記。
+DESIGN.md Section 5 の JSON 例も同様に更新。
 
 ### [BUG-004] dbusテスト全体的に不十分
 

@@ -61,7 +61,7 @@ gui ツールの action 一覧:
 誤った例（gui なのに command を使っている）:
 
 正しい例（dbus）:
-{"task_summary":"KRunnerの検索履歴をクリア","steps":[{"step_id":1,"tool":"dbus","action":"call","service":"org.kde.krunner","object":"/App","interface":"org.kde.krunner.App","method":"toggleDisplay","args":[],"bus":"session","description":"KRunnerの検索履歴をクリア","danger_level":1,"on_error":"abort"}]}
+{"task_summary":"KRunnerを開閉する","steps":[{"step_id":1,"tool":"dbus","action":"call","service":"org.kde.krunner","object":"/App","interface":"org.kde.krunner.App","method":"toggleDisplay","args":[],"arg_types":[],"bus":"session","description":"KRunnerを開閉する","danger_level":1,"on_error":"abort"}]}
 {"step_id":1,"tool":"gui","command":"gui:action=screenshot"} ← これは間違い
 
 正しい例（gui なのに action を使っている）:
