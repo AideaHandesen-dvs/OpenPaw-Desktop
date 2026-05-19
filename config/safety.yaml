@@ -24,8 +24,9 @@ dangerous:
   - "systemctl disable"
 
 # 操作を許可するパスプレフィックス（これ以外は拒否）
+# ${HOME} は実行ユーザーのホームディレクトリに自動展開される
 allowed_paths:
-  - "/home/john"
+  - "${HOME}"
   - "/tmp"
 
 # 実行タイムアウト（秒）

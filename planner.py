@@ -108,9 +108,21 @@ serviceとobjectは推測で構いません。後でintrospectして確認しま
 # OllamaClient Protocol（テスト時にモック差し替え可能）
 # ------------------------------------------------------------------ #
 
+from typing import runtime_checkable
+
+@runtime_checkable
 class OllamaClientProtocol(Protocol):
+    """基本プランニング用クライアントインターフェース。"""
     def generate(self, prompt: str) -> str:
         """プロンプトを送り、LLMの応答テキストを返す。"""
+        ...
+
+
+@runtime_checkable
+class OllamaClientFullProtocol(OllamaClientProtocol, Protocol):
+    """D-Bus二段階プランニングに対応した拡張クライアントインターフェース。"""
+    def generate_with_system(self, prompt: str, system: str) -> str:
+        """任意のシステムプロンプトでLLMを呼び出す。"""
         ...
 
 
@@ -151,9 +163,20 @@ class OllamaClient:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-            return body["response"]
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+                return body["response"]
+        except urllib.error.URLError as e:
+            if isinstance(e.reason, ConnectionRefusedError):
+                raise PlannerError(
+                    f"Ollamaに接続できません。起動しているか確認してください。\n"
+                    f"  接続先: {self.base_url}\n"
+                    f"  起動コマンド: ollama serve"
+                ) from e
+            raise PlannerError(
+                f"Ollama への接続中にネットワークエラーが発生しました。\n詳細: {e}"
+            ) from e
 
 
 # ------------------------------------------------------------------ #
@@ -215,7 +238,7 @@ class TaskPlanner:
         # ---- D-Bus 二段階プランニング ----------------------------- #
         dbus_context = ""
         valid_dbus_methods: set[str] = set()
-        if hasattr(self._client, "generate_with_system"):
+        if isinstance(self._client, OllamaClientFullProtocol):
             target = self._detect_dbus_target(task)
             if target.get("use_dbus"):
                 methods = self._introspect_for_planner(target)
@@ -326,7 +349,7 @@ class TaskPlanner:
         失敗時は {"use_dbus": False} を返す（例外を外に出さない）。
         """
         try:
-            raw = self._client.generate_with_system(  # type: ignore[attr-defined]
+            raw = self._client.generate_with_system(  # noqa: protocol narrowed above
                 f"タスク: {task}",
                 DBUS_DETECT_PROMPT,
             )
@@ -458,8 +481,13 @@ class TaskPlanner:
                 step["action"] = action
                 return
 
-        # 推定できなければ screenshot をデフォルトとして補完
-        step["action"] = "screenshot"
+        # action を特定できなければ明示的なエラー
+        # （意図しないスクリーンショットより、失敗させて原因を明確にする）
+        raise PlannerError(
+            f"gui ステップの action を特定できませんでした。\n"
+            f"  command={command!r}\n"
+            f"LLM が gui ツールに 'action' フィールドを付けていない可能性があります。"
+        )
 
     def _validate_step(self, step: dict, index: int) -> None:
         """1ステップのフィールドを検証する。"""

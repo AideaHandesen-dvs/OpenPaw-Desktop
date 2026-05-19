@@ -112,8 +112,27 @@ def print_plan(task_summary: str, steps: list[dict]) -> None:
         print()
 
 
-def ask_confirmation(task_summary: str) -> bool:
-    """HITLの確認プロンプトを表示し、y なら True を返す。"""
+def ask_confirmation(task_summary: str, level2_steps: list[dict] | None = None) -> bool:
+    """HITLの確認プロンプトを表示し、y なら True を返す。
+
+    level2_steps が指定されている場合は danger_level 2 のステップを明示する。
+    --yes フラグでも level2_steps がある場合は必ず確認を求める（呼び出し側で制御）。
+    """
+    if level2_steps:
+        print("⚠️  以下の危険操作が含まれています（--yes フラグでもスキップ不可）:")
+        for step in level2_steps:
+            sid  = step["step_id"]
+            desc = step["description"]
+            tool = step["tool"]
+            if tool == "shell":
+                detail = f"コマンド: {step.get('command', '')}"
+            elif tool == "filesystem":
+                detail = f"操作: {step.get('action', '')} {step.get('src', '')}"
+            else:
+                detail = f"ツール: {tool}"
+            print(f"  ステップ {sid}: {desc}  [{detail}]")
+        print()
+
     try:
         answer = input("実行しますか？ [y/N]: ").strip().lower()
     except (EOFError, KeyboardInterrupt):
@@ -274,10 +293,19 @@ def run(task: str, dry_run: bool = False, yes: bool = False) -> int:
         print("[dry-run] 実行はスキップされました。")
         return 0
 
-    # ---- Step 6: HITL確認（Level >= 1 のステップがあれば） --------- #
-    needs_confirmation = any(s["danger_level"] >= 1 for s in plan.steps)
+    # ---- Step 6: HITL確認 ----------------------------------------- #
+    # danger_level 2 のステップは --yes フラグでも確認を省略できない
+    level2_steps   = [s for s in plan.steps if s["danger_level"] >= 2]
+    level1_or_more = any(s["danger_level"] >= 1 for s in plan.steps)
 
-    if needs_confirmation and not yes:
+    if level2_steps:
+        # Level 2 が含まれる → --yes に関わらず確認必須
+        confirmed = ask_confirmation(plan.task_summary, level2_steps=level2_steps)
+        if not confirmed:
+            print("[中断] ユーザーがキャンセルしました。")
+            return 0
+    elif level1_or_more and not yes:
+        # Level 1 のみ、かつ --yes なし → 通常確認
         confirmed = ask_confirmation(plan.task_summary)
         if not confirmed:
             print("[中断] ユーザーがキャンセルしました。")

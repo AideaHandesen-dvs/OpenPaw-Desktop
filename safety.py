@@ -58,9 +58,13 @@ class SafetyChecker:
     """
 
     def __init__(self, config_path: Optional[Path] = None):
+        import os
         path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
-        with open(path, encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
+        cfg_text = path.read_text(encoding="utf-8")
+        # ${HOME} / ${USER} を実行ユーザーの値に展開する
+        cfg_text = cfg_text.replace("${HOME}", str(Path.home()))
+        cfg_text = cfg_text.replace("${USER}", os.getenv("USER", Path.home().name))
+        cfg = yaml.safe_load(cfg_text)
 
         self._blocklist: list[str]           = cfg.get("blocklist", [])
         self._dangerous: list[str]           = cfg.get("dangerous", [])
@@ -149,12 +153,33 @@ class SafetyChecker:
     # ------------------------------------------------------------------ #
 
     def _is_blocked(self, command: str) -> bool:
-        """blocklist のいずれかのパターンがコマンドに含まれるか判定する。"""
+        """blocklist のいずれかのパターンがコマンドに含まれるか判定する。
+
+        単一単語パターン（"sudo", "mkfs" 等）はトークン単位で一致させる。
+        ただし "mkfs.ext4" のような派生コマンドも捕捉するため、
+        トークンがパターンで始まり次の文字が英数字でない場合もブロック対象とする。
+        複数単語パターン（"rm -rf /" 等）はホワイトスペース正規化後に部分一致。
+        これにより "sudoku" のような誤検知を防ぎつつ、スペース重複・派生コマンドの回避も防ぐ。
+        """
         if not command:
             return False
+        # ホワイトスペース正規化（スペース重複・タブによる回避を防ぐ）
+        normalized = " ".join(command.split())
+        tokens = normalized.split()
+
         for pattern in self._blocklist:
-            if pattern in command:
-                return True
+            pattern_normalized = " ".join(pattern.split())
+            if " " in pattern_normalized:
+                # 複数単語パターン → 正規化済み文字列の部分一致
+                if pattern_normalized in normalized:
+                    return True
+            else:
+                # 単一単語パターン → トークンの完全一致 or 派生コマンド前方一致
+                # 例: "mkfs" → "mkfs" も "mkfs.ext4" もブロック
+                # 例: "sudo" → "sudo" はブロック、"sudoku" はスキップ
+                for token in tokens:
+                    if token == pattern_normalized or token.startswith(pattern_normalized + "."):
+                        return True
         return False
 
     def _is_dangerous(self, command: str) -> bool:
@@ -177,28 +202,32 @@ class SafetyChecker:
     def _is_allowed_path(self, path: str) -> bool:
         """
         パスが allowed_paths のいずれかのプレフィックスに収まるか判定する。
-        チルダ展開は行わず、文字列プレフィックスで比較する。
-        （チルダ展開は executor.py 側の責務）
+        Path.resolve() で ../../../ 等のパストラバーサルを無力化する。
+        存在しないパスも strict=False（デフォルト）で展開される。
         """
         if not self._allowed_paths:
             return True  # allowed_paths が空なら全パスを許可
 
-        # チルダを /home/<username> 相当に展開して比較
-        expanded = str(Path(path).expanduser())
+        # グロブ文字を含む場合は親ディレクトリで判定
+        # 例: ~/Downloads/*.pdf → ~/Downloads/ を対象にする
+        check_path = path
+        if "*" in path or "?" in path:
+            check_path = path.split("*")[0].split("?")[0]
+
+        try:
+            resolved = Path(check_path).expanduser().resolve()
+        except Exception:
+            return False
 
         for allowed in self._allowed_paths:
-            allowed_expanded = str(Path(allowed).expanduser())
-            if expanded == allowed_expanded or expanded.startswith(allowed_expanded + "/"):
+            try:
+                allowed_resolved = Path(allowed).expanduser().resolve()
+            except Exception:
+                continue
+            if resolved == allowed_resolved or str(resolved).startswith(
+                str(allowed_resolved) + "/"
+            ):
                 return True
-
-        # グロブ文字を含む場合は親ディレクトリで判定
-        # 例: ~/Downloads/*.pdf → ~/Downloads/ が allowed かチェック
-        if "*" in path or "?" in path:
-            parent = str(Path(path.split("*")[0].split("?")[0]).expanduser())
-            for allowed in self._allowed_paths:
-                allowed_expanded = str(Path(allowed).expanduser())
-                if parent.startswith(allowed_expanded):
-                    return True
 
         return False
 
