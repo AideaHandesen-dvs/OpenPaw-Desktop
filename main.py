@@ -305,7 +305,40 @@ def run(task: str, dry_run: bool = False, yes: bool = False) -> int:
                 print(f"[失敗] {err_msg}", file=sys.stderr)
                 logger.append_task_end(plan.task_summary, "aborted")
                 return 1
-            step["src"] = prev_output.strip()
+
+            lines = [l for l in prev_output.strip().splitlines() if l.strip()]
+
+            if len(lines) > 1:
+                # 複数ファイル → 1件ずつ実行
+                print(f"[実行中] ステップ {sid}: {step['description']} ({len(lines)} 件)")
+                for path in lines:
+                    sub_step = {**step, "src": path}
+                    success, output, error = execute_step(sub_step, timeout=checker.timeout)
+                    status = "success" if success else "failure"
+                    logger.append_step(
+                        task_summary=plan.task_summary,
+                        step_id=sid,
+                        tool=tool,
+                        danger_level=level,
+                        status=status,
+                        user_confirmed=confirmed if level >= 1 else None,
+                        action=step.get("action"),
+                        command=step.get("command"),
+                        src=path,
+                        dst=step.get("dst"),
+                        output=output or None,
+                        error=error or None,
+                    )
+                    if success:
+                        print(f"  → {path}")
+                    else:
+                        print(f"[失敗] ステップ {sid} ({path}): {error}", file=sys.stderr)
+                        logger.append_task_end(plan.task_summary, "aborted")
+                        return 1
+                prev_output = None
+                continue  # 通常の execute_step をスキップ
+            else:
+                step["src"] = lines[0] if lines else ""
 
         print(f"[実行中] ステップ {sid}: {step['description']}")
 
