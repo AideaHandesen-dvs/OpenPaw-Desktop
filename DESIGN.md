@@ -466,9 +466,18 @@ for step in plan.steps:
     # $prev を実際の出力で置換
     if step.get("src") == "$prev":
         if prev_output is None:
-            # エラー: 前ステップに出力がない
+            # エラー: 前ステップに出力がない → return 1
             ...
-        step["src"] = prev_output.strip()
+        lines = [l for l in prev_output.strip().splitlines() if l.strip()]
+        if len(lines) > 1:
+            # 複数ファイル → 1件ずつ execute_step を呼んで continue
+            for path in lines:
+                sub_step = {**step, "src": path}
+                execute_step(sub_step)  # ログ・エラー処理含む
+            prev_output = None
+            continue
+        else:
+            step["src"] = lines[0] if lines else ""
 
     success, output, error = execute_step(step)
 
@@ -483,8 +492,8 @@ for step in plan.steps:
 
 - `main.py`: executorループの修正
 - `planner.py`: SYSTEM_PROMPTに`$prev`と`capture_output`の例を追加
-- `tests/test_planner.py`: 新しいフィールドのバリデーションテスト追加
-- `tests/`: executor側の引き渡しテスト追加
+- `tests/test_prev_handoff.py`: executor引き渡しテスト（10ケース）追加
+- `safety.py`: `paths_to_check` から `"$prev"` を除外（BUG-008対応）
 
 #### 未対応（スコープ外）
 
@@ -492,9 +501,10 @@ for step in plan.steps:
 - 条件分岐（Step1の結果によってStep2の内容を変える）
 - shell以外のツール（filesystem等）のoutputを引き渡しに使う
 
-### [BUG-001] ステップ間のデータ引き渡しが機能しない
+### ~~[BUG-001] ステップ間のデータ引き渡しが機能しない~~ ✅ 解決済み
 
 **発見日:** 2026-05-18  
+**解決日:** 2026-05-19  
 **再現手順:** `python main.py "Downloadsの古いPDFをDocumentsに移動して"`  
 **症状:** LLMが `find -mtime +7` で古いファイルを絞り込むステップを生成しても、
 次のfilesystemステップのsrcはハードコードされた `~/Downloads/*.pdf` のままで
@@ -502,7 +512,10 @@ for step in plan.steps:
 **原因:** ステップ間でデータを引き渡す仕組みがない。各ステップは独立実行のみ。  
 **影響:** 条件付き操作（「古いファイルだけ」「サイズが大きいものだけ」等）が
 すべて意図通りに動かない。  
-**対処方針:** 未定（現フェーズスコープ外）
+**対処:** Section 16 B-1 を実装（`capture_output` + `$prev`）。  
+複数ファイル返却時は1件ずつ `execute_step` を呼ぶことで対処（BUG-008も同時解決）。  
+**確認:** `python main.py "古いPDFだけDocumentsに移動して"` →
+`old1.pdf` / `old2.pdf` のみ移動、`new.pdf` は残留。
 
 
 ### ~~[BUG-003] SYSTEM_PROMPTのdbus例のメソッドが実在しない~~ ✅ 解決済み
@@ -558,3 +571,19 @@ filesystemツール/danger_level 1 で成功。
 このタスクをユーザーが入力した場合の挙動は現状のまま（誤ったdbusを実行）でも、
 そもそもこのタスクをエージェントに投げることを推奨しないという運用方針とする。
 将来的にはSYSTEM_PROMPTに「KRunner履歴クリアはサポート対象外」と明記することも検討。
+
+
+### ~~[BUG-008] SafetyCheckerが`$prev`をリテラルパスとして拒否する~~ ✅ 解決済み
+
+**発見日:** 2026-05-19  
+**解決日:** 2026-05-19  
+**再現手順:** Section 16 B-1 実装後に `python main.py "古いPDFだけDocumentsに移動して"` を実行  
+**症状:** ステップ2（`src: "$prev"`）が `danger_level: 3` でブロックされ実行されない。  
+エラー: `Path not in allowed_paths: '$prev'`  
+**原因:** SafetyCheckerのパス制限チェックがexecutorによる`$prev`置換より前に走るため、
+`"$prev"` という文字列がそのままパスとして評価される。  
+**対処:** `safety.py` の `paths_to_check` から `"$prev"` を除外。  
+実際のパス検証はexecutor実行時にfilesystemツール側で行われる。  
+```python
+paths_to_check = [p for p in (src, dst) if p and p != "$prev"]
+```
