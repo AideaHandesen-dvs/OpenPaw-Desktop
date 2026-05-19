@@ -404,7 +404,93 @@ python main.py "スクリーンショットを撮って"
 - 実装した内容を設計書の該当チェックボックスにチェックを入れる
 - 設計変更があれば設計書を更新してから終了する
 
-## 15. 既知のバグ・制限事項
+---
+
+## 16. ステップ間データ引き渡し（次期実装）
+
+### 背景
+
+現状のexecutorは各ステップを独立して実行するだけで、前のステップの出力を
+次のステップが使えない（BUG-001）。これにより「古いファイルだけ移動」のような
+条件付き操作が意図通りに動かない。
+
+### 設計方針
+
+**案Bを採用: Pythonのexecutorが引き渡しを管理する**
+
+LLMにプレースホルダーを書かせる案（案A）は、7bモデルがルールを守らない
+可能性が高くBUG-006と同根の問題を引き起こすため採用しない。
+「LLMを信用しすぎない、コードで強制する」という本プロジェクトの方針に従い、
+Pythonコードが引き渡しの全責務を持つ。
+
+**フェーズ分割: まずB-1（シンプル版）から実装する**
+
+| 案 | できること | 実装コスト |
+|----|-----------|-----------|
+| B-1: 前ステップのoutputをそのまま次のsrcに渡す | 典型的なユースケースをカバー | 低 |
+| B-2: outputをパースして構造化データとして渡す | より複雑な操作に対応 | 高 |
+
+B-1で典型ユースケース（find結果→移動等）をカバーし、必要に応じてB-2に拡張する。
+
+### B-1の設計詳細
+
+#### 対象パターン
+
+```
+Step1: shell → 1行1ファイルのパスリストを出力
+Step2: filesystem/move または filesystem/copy → srcにStep1の出力を使いたい
+```
+
+#### LLMへの指示（SYSTEM_PROMPT追加）
+
+Step1のshellステップに `"capture_output": true` フラグを立てさせる。
+Step2のfilesystemステップの `src` に `"{steps[1].output}"` ではなく
+`"$prev"` のような固定キーワードを書かせる。
+
+```json
+{"step_id": 1, "tool": "shell", "command": "find ~/Downloads -name '*.pdf' -mtime +30",
+ "capture_output": true, "danger_level": 0, "on_error": "abort"}
+{"step_id": 2, "tool": "filesystem", "action": "move",
+ "src": "$prev", "dst": "~/Documents/", "danger_level": 1, "on_error": "abort"}
+```
+
+`$prev` という固定キーワードにすることでLLMが覚えやすく、
+executorが検出しやすい。
+
+#### executorの変更（main.py）
+
+```python
+prev_output: str | None = None  # 直前ステップの出力
+
+for step in plan.steps:
+    # $prev を実際の出力で置換
+    if step.get("src") == "$prev":
+        if prev_output is None:
+            # エラー: 前ステップに出力がない
+            ...
+        step["src"] = prev_output.strip()
+
+    success, output, error = execute_step(step)
+
+    # capture_output フラグがあれば出力を保持
+    if step.get("capture_output") and success:
+        prev_output = output
+    else:
+        prev_output = None  # フラグがなければリセット
+```
+
+#### 影響範囲
+
+- `main.py`: executorループの修正
+- `planner.py`: SYSTEM_PROMPTに`$prev`と`capture_output`の例を追加
+- `tests/test_planner.py`: 新しいフィールドのバリデーションテスト追加
+- `tests/`: executor側の引き渡しテスト追加
+
+#### 未対応（スコープ外）
+
+- 2ステップ以上前の出力を参照する（`$steps[1].output`のような多段参照）
+- 条件分岐（Step1の結果によってStep2の内容を変える）
+- shell以外のツール（filesystem等）のoutputを引き渡しに使う
 
 ### [BUG-001] ステップ間のデータ引き渡しが機能しない
 
