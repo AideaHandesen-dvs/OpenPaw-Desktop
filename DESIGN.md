@@ -379,7 +379,7 @@ python main.py "スクリーンショットを撮って"
 # → ~/.openpaw/screenshots/<timestamp>.png に保存される
 ```
 
-### 手動テスト結果（2026-05-19実施）
+### 手動テスト結果（2026-05-19実施 2026-05-20追記）
 
 | ID | コマンド | 結果 | 備考 |
 |----|---------|------|------|
@@ -390,6 +390,8 @@ python main.py "スクリーンショットを撮って"
 | T-05 | `"KRunnerを開いて"` | ✅ | dbus/toggleDisplay 動作（開閉なので実質OK） |
 | T-06 | `--dry-run "KRunnerを開閉して"` | ✅ | introspect→dry-run 正常動作 |
 | T-07 | `"KRunnerの履歴を消して"` | ❌ | toggleDisplay×2を実行（BUG-006/007参照） |
+| T-08 | `--yes "Documentsの古いpdfを削除してくれ．"` | ✅ | action:delete生成・Level2確認必須・$prev複数件正常動作 |
+| T-09 | `"Documentsの古いpdfを削除してくれ．"（対象なし）` | ✅ | $prevが空→スキップで正常終了 |
 
 ### Step 4: 既知の問題・注意事項
 
@@ -399,6 +401,8 @@ python main.py "スクリーンショットを撮って"
 - ydotool 0.1.8 に `scroll` サブコマンドは存在しない → xdotool にフォールバック済み
 - ydotool 0.1.8 に `ydotoold.service` は存在しない。`/dev/uinput` への権限があれば動く
   → `john` を `input` グループに追加済み（VM内）
+- ~~`action:rm` 等の不正なfilesystemアクションがLevel0で素通りする~~ → safety.pyで許可リスト外をLevel3ブロックに修正済み
+- ~~`$prev`が空（findが0件）のとき`src:""`→`delete(".")`を試みクラッシュ~~ → 空の場合はスキップして正常終了するよう修正済み
 
 ### Step 5: 各セッションの終わりに
 - 実装した内容を設計書の該当チェックボックスにチェックを入れる
