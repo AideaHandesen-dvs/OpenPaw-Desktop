@@ -416,3 +416,13 @@ python main.py "スクリーンショットを撮って"
 org.kde.krunner.App.CleanHistory がこの環境のKRunnerに存在しない。
 **実際のメソッド:** display / query / toggleDisplay / switchUser 等
 **対処方針:** SYSTEM_PROMPTのdbus例を実在するメソッドに差し替える
+
+### [BUG-004] dbusテスト全体的に不十分
+
+**発見日:** 2026-05-19
+**内容:** toggleDisplayはKRunnerを開閉するだけで履歴クリアとは無関係。
+タスクの意図と実行内容が乖離している。
+dbus/callのテストとして「メソッドを呼び出せた」は確認できたが、
+LLMが適切なメソッドを選択する仕組みがなく実用レベルにない。
+BUG-001と同根の問題（ステップ間・タスク意図の引き渡しができない）。
+**対処方針:** 未定（現フェーズスコープ外）
