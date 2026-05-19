@@ -104,7 +104,7 @@ class SafetyChecker:
             return self._check_gui(step)
 
         # ---- 2. パス制限チェック ----------------------------------- #
-        paths_to_check = [p for p in (src, dst) if p]
+        paths_to_check = [p for p in (src, dst) if p and p != "$prev"]
         for p in paths_to_check:
             if not self._is_allowed_path(p):
                 return CheckResult(
