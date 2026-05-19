@@ -336,6 +336,22 @@ def run(task: str, dry_run: bool = False, yes: bool = False) -> int:
 
             lines = [l for l in prev_output.strip().splitlines() if l.strip()]
 
+            if not lines:
+                # 前ステップの出力が空 = 対象ファイルなし → スキップして正常終了
+                print(f"[スキップ] ステップ {sid}: 対象ファイルなし（前ステップの出力が空）")
+                logger.append_step(
+                    task_summary=plan.task_summary,
+                    step_id=sid,
+                    tool=tool,
+                    danger_level=level,
+                    status="skipped",
+                    user_confirmed=confirmed if level >= 1 else None,
+                    action=step.get("action"),
+                    src="$prev (empty)",
+                )
+                prev_output = None
+                continue
+
             if len(lines) > 1:
                 # 複数ファイル → 1件ずつ実行
                 print(f"[実行中] ステップ {sid}: {step['description']} ({len(lines)} 件)")
