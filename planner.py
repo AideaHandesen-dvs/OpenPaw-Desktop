@@ -56,7 +56,12 @@ gui ツールの action 一覧:
 {"task_summary":"ファイル確認","steps":[{"step_id":1,"tool":"shell","command":"ls ~/Downloads","description":"一覧確認","danger_level":0,"on_error":"abort"}]}
 
 
-正しい例（filesystem）:
+正しい例（filesystem - ファイル移動）:
+{"task_summary":"test.txtをDocumentsへ移動","steps":[{"step_id":1,"tool":"filesystem","action":"move","src":"~/test.txt","dst":"~/Documents/","description":"test.txtを移動","danger_level":1,"on_error":"abort"}]}
+
+注意: ファイルのコピー・移動・削除は shell の mv/cp/rm ではなく必ず filesystem ツールを使う。
+
+正しい例（filesystem - PDFをDocumentsへ移動）:
 {"task_summary":"PDFをDocumentsへ移動","steps":[{"step_id":1,"tool":"shell","command":"ls ~/Downloads/*.pdf","description":"PDFを確認","danger_level":0,"on_error":"abort"},{"step_id":2,"tool":"filesystem","action":"move","src":"~/Downloads/*.pdf","dst":"~/Documents/","description":"PDFを移動","danger_level":1,"on_error":"abort"}]}
 誤った例（gui なのに command を使っている）:
 
@@ -184,6 +189,8 @@ class TaskPlanner:
           1. D-Bus ターゲット（service/object）を LLM に推定させる
           2. Python が introspect を実行して実在メソッド一覧を取得
           3. メソッド一覧を含めた上で LLM にプランを生成させる
+          4. 生成されたプランの dbus ステップが実在メソッドを使っているか
+             コードレベルで検証し、違反があれば shell で再プランニングする（BUG-006対策）
 
         generate_with_system() を持たないクライアント（モック）では
         ステップ1〜2をスキップして通常の単一パス動作にフォールバックする。
@@ -199,11 +206,13 @@ class TaskPlanner:
         """
         # ---- D-Bus 二段階プランニング ----------------------------- #
         dbus_context = ""
+        valid_dbus_methods: set[str] = set()
         if hasattr(self._client, "generate_with_system"):
             target = self._detect_dbus_target(task)
             if target.get("use_dbus"):
                 methods = self._introspect_for_planner(target)
                 if methods:
+                    valid_dbus_methods = self._parse_method_names(methods)
                     svc = target.get("service", "")
                     obj = target.get("object", "")
                     dbus_context = (
@@ -226,7 +235,82 @@ class TaskPlanner:
         except Exception as e:
             raise PlannerError(f"LLM呼び出しエラー: {e}") from e
 
-        return self._parse(raw)
+        plan = self._parse(raw)
+
+        # ---- D-Bus メソッド検証（コードレベルで強制、BUG-006対策）-- #
+        # valid_dbus_methods が空でない = introspect 成功済み
+        # その場合のみ、存在しないメソッドを使うステップを検出して
+        # shell で再プランニングする。
+        if valid_dbus_methods:
+            plan = self._enforce_dbus_methods(task, plan, valid_dbus_methods)
+
+        return plan
+
+    def _parse_method_names(self, methods_str: str) -> set[str]:
+        """
+        _introspect_for_planner が返す文字列からメソッド名のセットを抽出する。
+
+        入力例:
+          .toggleDisplay    method    -    -    -
+          .query            method    s    as   -
+
+        戻り値: {"toggleDisplay", "query"}
+        """
+        names: set[str] = set()
+        for line in methods_str.splitlines():
+            parts = line.split()
+            if (len(parts) >= 2
+                    and parts[0].startswith(".")
+                    and parts[1] == "method"):
+                names.add(parts[0][1:])  # 先頭の "." を除去
+        return names
+
+    def _enforce_dbus_methods(
+        self,
+        task: str,
+        plan: Plan,
+        valid_methods: set[str],
+    ) -> Plan:
+        """
+        生成されたプランの dbus/call ステップを検証し、
+        メソッドが実在しない場合は shell で再プランニングする（BUG-006対策）。
+
+        Args:
+            task:          元のユーザータスク文字列
+            plan:          LLM が生成したプラン
+            valid_methods: introspect で確認済みのメソッド名セット
+
+        Returns:
+            検証済み（または再プランニング済み）の Plan
+
+        Raises:
+            PlannerError: 再プランニングも失敗した場合
+        """
+        invalid_steps = [
+            step for step in plan.steps
+            if step.get("tool") == "dbus"
+            and step.get("action") == "call"
+            and step.get("method", "") not in valid_methods
+        ]
+        if not invalid_steps:
+            return plan  # 全ステップが有効
+
+        # 存在しないメソッド名を列挙してフォールバック再プランニング
+        bad_methods = [s.get("method", "(不明)") for s in invalid_steps]
+        fallback_prompt = (
+            f"タスク: {task}\n\n"
+            f"D-Busを調査しましたが、タスクに必要なメソッドが存在しません"
+            f"（存在しないメソッド: {', '.join(bad_methods)}）。\n"
+            f"dbus を使わず、shell または filesystem ツールのみでタスクを実行してください。"
+        )
+        try:
+            raw = self._client.generate(fallback_prompt)
+            return self._parse(raw)
+        except Exception as e:
+            raise PlannerError(
+                f"shellフォールバック再プランニング失敗: {e}\n"
+                f"（元の無効メソッド: {', '.join(bad_methods)}）"
+            ) from e
 
     def _detect_dbus_target(self, task: str) -> dict:
         """
@@ -396,3 +480,4 @@ class TaskPlanner:
         dl = step.get("danger_level")
         if not isinstance(dl, int) or dl < 0 or dl > 3:
             raise PlannerError(f"ステップ {index}: danger_level が不正: {dl!r}")
+

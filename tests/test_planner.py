@@ -194,6 +194,159 @@ class TestTaskPlannerValidation(unittest.TestCase):
             self._planner(bad).plan("テスト")
 
 
+class TestParseMethodNames(unittest.TestCase):
+    """_parse_method_names のユニットテスト。"""
+
+    def _planner(self) -> TaskPlanner:
+        return TaskPlanner(client=MockOllamaClient(VALID_SHELL_PLAN))
+
+    def test_extracts_method_names(self):
+        planner = self._planner()
+        methods_str = (
+            ".toggleDisplay    method    -    -    -\n"
+            ".query            method    s    as   -\n"
+            ".display          method    -    -    -\n"
+        )
+        result = planner._parse_method_names(methods_str)
+        self.assertEqual(result, {"toggleDisplay", "query", "display"})
+
+    def test_empty_string_returns_empty_set(self):
+        planner = self._planner()
+        self.assertEqual(planner._parse_method_names(""), set())
+
+    def test_ignores_non_method_lines(self):
+        planner = self._planner()
+        methods_str = (
+            "org.kde.krunner.App    interface    -    -    -\n"
+            ".toggleDisplay         method       -    -    -\n"
+            ".Running               property     b    -    emits-change\n"
+        )
+        result = planner._parse_method_names(methods_str)
+        self.assertEqual(result, {"toggleDisplay"})
+
+
+class TestEnforceDbusMethodsBUG006(unittest.TestCase):
+    """
+    BUG-006: introspect後に存在しないメソッドをdbusで強行する問題の修正テスト。
+    _enforce_dbus_methods() の動作を検証する。
+    """
+
+    SHELL_FALLBACK_PLAN = json.dumps({
+        "task_summary": "shellでKRunner履歴をクリアする",
+        "steps": [{
+            "step_id": 1,
+            "tool": "shell",
+            "description": "krunnerrcから履歴を削除",
+            "command": "sed -i '/history/d' ~/.config/krunnerrc",
+            "danger_level": 1,
+            "on_error": "abort",
+        }],
+    })
+
+    DBUS_PLAN_WITH_INVALID_METHOD = json.dumps({
+        "task_summary": "KRunner履歴をクリアする",
+        "steps": [{
+            "step_id": 1,
+            "tool": "dbus",
+            "action": "call",
+            "service": "org.kde.krunner",
+            "object": "/App",
+            "interface": "org.kde.krunner.App",
+            "method": "CleanHistory",   # 存在しないメソッド
+            "args": [],
+            "arg_types": [],
+            "bus": "session",
+            "description": "履歴をクリア",
+            "danger_level": 1,
+            "on_error": "abort",
+        }],
+    })
+
+    def test_invalid_method_triggers_fallback(self):
+        """存在しないメソッドが使われた場合、shellで再プランニングされる。"""
+        # _enforce_dbus_methods を直接呼ぶので、
+        # generate() の呼び出しは1回（shellフォールバック用）のみ。
+        class SequentialMock:
+            def __init__(self, response: str):
+                self.calls: list[str] = []
+                self._response = response
+            def generate(self, prompt: str) -> str:
+                self.calls.append(prompt)
+                return self._response
+
+        mock = SequentialMock(self.SHELL_FALLBACK_PLAN)
+        planner = TaskPlanner(client=mock)
+
+        valid_methods = {"toggleDisplay", "query", "display"}  # CleanHistoryは含まない
+        dbus_plan = planner._parse(self.DBUS_PLAN_WITH_INVALID_METHOD)
+        result = planner._enforce_dbus_methods("KRunnerの履歴を消して", dbus_plan, valid_methods)
+
+        # shellにフォールバックされていること
+        self.assertEqual(result.steps[0]["tool"], "shell")
+        # 再プランニングのプロンプトに無効メソッド名が含まれること
+        self.assertIn("CleanHistory", mock.calls[0])
+
+    def test_valid_method_passes_through(self):
+        """実在するメソッドが使われた場合、プランはそのまま返る。"""
+        DBUS_PLAN_WITH_VALID_METHOD = json.dumps({
+            "task_summary": "KRunnerを開閉する",
+            "steps": [{
+                "step_id": 1,
+                "tool": "dbus",
+                "action": "call",
+                "service": "org.kde.krunner",
+                "object": "/App",
+                "interface": "org.kde.krunner.App",
+                "method": "toggleDisplay",  # 実在するメソッド
+                "args": [],
+                "arg_types": [],
+                "bus": "session",
+                "description": "KRunnerを開閉する",
+                "danger_level": 1,
+                "on_error": "abort",
+            }],
+        })
+        mock = MockOllamaClient(VALID_SHELL_PLAN)  # フォールバックは呼ばれないはず
+        planner = TaskPlanner(client=mock)
+
+        valid_methods = {"toggleDisplay", "query"}
+        dbus_plan = planner._parse(DBUS_PLAN_WITH_VALID_METHOD)
+        result = planner._enforce_dbus_methods("KRunnerを開閉して", dbus_plan, valid_methods)
+
+        # dbusのままであること（shellに変換されていない）
+        self.assertEqual(result.steps[0]["tool"], "dbus")
+        self.assertEqual(result.steps[0]["method"], "toggleDisplay")
+        # generate() は呼ばれていないこと（フォールバック不要）
+        self.assertEqual(mock.called_with, [])
+
+    def test_non_call_dbus_action_not_affected(self):
+        """dbus/call 以外のアクション（introspect等）は検証対象外。"""
+        INTROSPECT_PLAN = json.dumps({
+            "task_summary": "introspect",
+            "steps": [{
+                "step_id": 1,
+                "tool": "dbus",
+                "action": "introspect",  # call ではない
+                "service": "org.kde.krunner",
+                "object": "/App",
+                "interface": "org.kde.krunner.App",
+                "description": "introspect",
+                "danger_level": 0,
+                "on_error": "abort",
+            }],
+        })
+        mock = MockOllamaClient(VALID_SHELL_PLAN)
+        planner = TaskPlanner(client=mock)
+
+        valid_methods = {"toggleDisplay"}
+        plan = planner._parse(INTROSPECT_PLAN)
+        result = planner._enforce_dbus_methods("introspect", plan, valid_methods)
+
+        # introspect ステップはそのまま通過すること
+        self.assertEqual(result.steps[0]["action"], "introspect")
+        self.assertEqual(mock.called_with, [])
+
+
 class TestTaskPlannerConnectionError(unittest.TestCase):
     """Ollama 接続失敗時に PlannerError が送出される。"""
 
@@ -216,3 +369,4 @@ class TestTaskPlannerConnectionError(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
