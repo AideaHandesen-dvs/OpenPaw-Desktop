@@ -63,6 +63,14 @@ gui ツールの action 一覧:
 
 正しい例（filesystem - PDFをDocumentsへ移動）:
 {"task_summary":"PDFをDocumentsへ移動","steps":[{"step_id":1,"tool":"shell","command":"ls ~/Downloads/*.pdf","description":"PDFを確認","danger_level":0,"on_error":"abort"},{"step_id":2,"tool":"filesystem","action":"move","src":"~/Downloads/*.pdf","dst":"~/Documents/","description":"PDFを移動","danger_level":1,"on_error":"abort"}]}
+
+正しい例（条件付き移動 - 古いPDFだけDocumentsへ移動）:
+{"task_summary":"古いPDFをDocumentsへ移動","steps":[{"step_id":1,"tool":"shell","command":"find ~/Downloads -name '*.pdf' -mtime +30","description":"30日以上前のPDFを検索","danger_level":0,"capture_output":true,"on_error":"abort"},{"step_id":2,"tool":"filesystem","action":"move","src":"$prev","dst":"~/Documents/","description":"検索結果のPDFを移動","danger_level":1,"on_error":"abort"}]}
+
+重要: 「古いファイルだけ」「サイズが大きいものだけ」など絞り込みが必要な場合:
+- Step1: shell で find コマンドを使い、\"capture_output\": true を必ず付ける
+- Step2: filesystem の src を \"$prev\" にする（前ステップの出力がそのまま渡される）
+- $prev は必ず src フィールドにのみ使う。dst には使わない
 誤った例（gui なのに command を使っている）:
 
 正しい例（dbus）:
@@ -480,4 +488,3 @@ class TaskPlanner:
         dl = step.get("danger_level")
         if not isinstance(dl, int) or dl < 0 or dl > 3:
             raise PlannerError(f"ステップ {index}: danger_level が不正: {dl!r}")
-

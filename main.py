@@ -288,10 +288,24 @@ def run(task: str, dry_run: bool = False, yes: bool = False) -> int:
     # ---- Step 7: 実行 --------------------------------------------- #
     logger.append_task_start(plan.task_summary)
 
+    prev_output: str | None = None  # 直前ステップの出力（capture_output=true のとき保持）
+
     for step in plan.steps:
         sid   = step["step_id"]
         tool  = step["tool"]
         level = step["danger_level"]
+
+        # $prev を前ステップの出力で置換
+        if step.get("src") == "$prev":
+            if prev_output is None:
+                err_msg = (
+                    f"ステップ {sid}: src=\"$prev\" が指定されていますが、"
+                    "直前ステップに capture_output がないか出力が空です。"
+                )
+                print(f"[失敗] {err_msg}", file=sys.stderr)
+                logger.append_task_end(plan.task_summary, "aborted")
+                return 1
+            step["src"] = prev_output.strip()
 
         print(f"[実行中] ステップ {sid}: {step['description']}")
 
@@ -317,6 +331,11 @@ def run(task: str, dry_run: bool = False, yes: bool = False) -> int:
         if success:
             if output:
                 print(f"  → {output}")
+            # capture_output フラグがあれば出力を次ステップへ引き渡す
+            if step.get("capture_output"):
+                prev_output = output
+            else:
+                prev_output = None
         else:
             print(f"[失敗] ステップ {sid}: {error}", file=sys.stderr)
             logger.append_task_end(plan.task_summary, "aborted")
