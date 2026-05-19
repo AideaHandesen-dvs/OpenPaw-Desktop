@@ -208,7 +208,10 @@ class TaskPlanner:
                     obj = target.get("object", "")
                     dbus_context = (
                         f"\n\nD-Busメソッド一覧 ({svc} {obj}):\n{methods}\n"
-                        f"上記の実在するメソッドのみを使ってください。"
+                        f"重要: 上記のメソッドのみ使用可能です。"
+                        f"タスクを達成できるメソッドが一覧にない場合は"
+                        f"dbus を使わず shell または filesystem でタスクを実行してください。"
+                        f"存在しないメソッドを作ってはいけません。"
                     )
 
         # ---- 通常プランニング（第2パスまたは単一パス） ------------ #
