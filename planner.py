@@ -76,6 +76,19 @@ gui ツールの action 一覧:
 """ + f"- 現在のユーザーは {_USER}、ホームディレクトリは {_HOME} です\n"
 
 
+# D-Bus ターゲット検出専用プロンプト（第1パスで使用）
+DBUS_DETECT_PROMPT = """ユーザーのタスクにD-Busが必要か判断し、JSONのみを返してください。
+
+D-Busが不要（ファイル操作・シェル・GUI）な場合:
+{"use_dbus": false}
+
+D-Busが必要（KDEサービス操作・システムサービス制御など）な場合:
+{"use_dbus": true, "service": "org.kde.krunner", "object": "/App", "bus": "session"}
+
+serviceとobjectは推測で構いません。後でintrospectして確認します。
+他のテキストは一切含めないでください。"""
+
+
 # ------------------------------------------------------------------ #
 # OllamaClient Protocol（テスト時にモック差し替え可能）
 # ------------------------------------------------------------------ #
@@ -103,11 +116,16 @@ class OllamaClient:
         self.timeout  = timeout
 
     def generate(self, prompt: str) -> str:
+        """通常プランニング用（SYSTEM_PROMPTを使用）。"""
+        return self.generate_with_system(prompt, SYSTEM_PROMPT)
+
+    def generate_with_system(self, prompt: str, system: str) -> str:
+        """任意のシステムプロンプトでLLMを呼び出す。"""
         url = f"{self.base_url}/api/generate"
         payload = json.dumps({
             "model":  self.model,
             "prompt": prompt,
-            "system": SYSTEM_PROMPT,
+            "system": system,
             "format": "json",
             "stream": False,
         }).encode("utf-8")
@@ -160,6 +178,14 @@ class TaskPlanner:
         """
         タスク文字列からJSONプランを生成して返す。
 
+        D-Bus タスクの場合は二段階プランニングを行う:
+          1. D-Bus ターゲット（service/object）を LLM に推定させる
+          2. Python が introspect を実行して実在メソッド一覧を取得
+          3. メソッド一覧を含めた上で LLM にプランを生成させる
+
+        generate_with_system() を持たないクライアント（モック）では
+        ステップ1〜2をスキップして通常の単一パス動作にフォールバックする。
+
         Args:
             task: ユーザーの自然言語タスク
 
@@ -169,7 +195,22 @@ class TaskPlanner:
         Raises:
             PlannerError: Ollama接続失敗またはJSONパース失敗
         """
-        prompt = f"タスク: {task}"
+        # ---- D-Bus 二段階プランニング ----------------------------- #
+        dbus_context = ""
+        if hasattr(self._client, "generate_with_system"):
+            target = self._detect_dbus_target(task)
+            if target.get("use_dbus"):
+                methods = self._introspect_for_planner(target)
+                if methods:
+                    svc = target.get("service", "")
+                    obj = target.get("object", "")
+                    dbus_context = (
+                        f"\n\nD-Busメソッド一覧 ({svc} {obj}):\n{methods}\n"
+                        f"上記の実在するメソッドのみを使ってください。"
+                    )
+
+        # ---- 通常プランニング（第2パスまたは単一パス） ------------ #
+        prompt = f"タスク: {task}{dbus_context}"
 
         try:
             raw = self._client.generate(prompt)
@@ -181,6 +222,64 @@ class TaskPlanner:
             raise PlannerError(f"LLM呼び出しエラー: {e}") from e
 
         return self._parse(raw)
+
+    def _detect_dbus_target(self, task: str) -> dict:
+        """
+        D-Bus が必要かどうかと、使用するサービス/オブジェクトを LLM に推定させる。
+        失敗時は {"use_dbus": False} を返す（例外を外に出さない）。
+        """
+        try:
+            raw = self._client.generate_with_system(  # type: ignore[attr-defined]
+                f"タスク: {task}",
+                DBUS_DETECT_PROMPT,
+            )
+            data = json.loads(raw)
+            if not isinstance(data, dict):
+                return {"use_dbus": False}
+            return data
+        except Exception:
+            return {"use_dbus": False}
+
+    def _introspect_for_planner(self, target: dict) -> str:
+        """
+        D-Bus サービスを introspect してメソッド一覧を文字列で返す。
+        失敗時は空文字列を返す（例外を外に出さない）。
+
+        busctl introspect の出力からメソッド行のみを抽出する:
+          .toggleDisplay    method    -    -    -
+          .query            method    s    as   -
+        """
+        from tools import dbus as dbus_tool
+
+        service = target.get("service", "")
+        obj     = target.get("object", "")
+        bus     = target.get("bus", "session")
+
+        if not service or not obj:
+            return ""
+
+        try:
+            result = dbus_tool.introspect(
+                service=service,
+                object_path=obj,
+                interface="",
+                bus=bus,
+                timeout=10,
+            )
+        except Exception:
+            return ""
+
+        if not result.success:
+            return ""
+
+        # メソッド行のみ抽出（標準 DBus インターフェースの行は除く）
+        lines = []
+        for line in result.output.splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[0].startswith(".") and parts[1] == "method":
+                lines.append(line.strip())
+
+        return "\n".join(lines)
 
     def _parse(self, raw: str) -> Plan:
         """
