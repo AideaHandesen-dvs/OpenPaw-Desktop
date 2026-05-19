@@ -125,23 +125,35 @@ class SafetyChecker:
                 reason=f"Matches dangerous pattern: {command!r}",
             )
 
-        # ---- 4. filesystem delete ---------------------------------- #
-        if tool == "filesystem" and action == "delete":
-            return CheckResult(
-                danger_level=2,
-                blocked=False,
-                reason="Filesystem delete operation",
-            )
+        # ---- 4. filesystem: 既知 action のみ許可 ------------------- #
+        # LLM が "rm" / "del" 等の不正な action を生成した場合に備え、
+        # 許可リスト外の action は Level 3 でブロックする。
+        if tool == "filesystem":
+            KNOWN_FS_ACTIONS = {"delete", "move", "copy", "mkdir"}
+            if action not in KNOWN_FS_ACTIONS:
+                return CheckResult(
+                    danger_level=3,
+                    blocked=True,
+                    reason=(
+                        f"Unknown filesystem action: {action!r}. "
+                        f"Allowed: {sorted(KNOWN_FS_ACTIONS)}"
+                    ),
+                )
+            if action == "delete":
+                return CheckResult(
+                    danger_level=2,
+                    blocked=False,
+                    reason="Filesystem delete operation",
+                )
+            if action in ("move", "copy"):
+                return CheckResult(
+                    danger_level=1,
+                    blocked=False,
+                    reason=None,
+                )
+            # mkdir は Level 0 → 後続の「それ以外」に落ちる
 
-        # ---- 5. filesystem move / copy ----------------------------- #
-        if tool == "filesystem" and action in ("move", "copy"):
-            return CheckResult(
-                danger_level=1,
-                blocked=False,
-                reason=None,
-            )
-
-        # ---- 6. それ以外 ------------------------------------------ #
+        # ---- 5. それ以外 ------------------------------------------ #
         return CheckResult(
             danger_level=0,
             blocked=False,

@@ -60,6 +60,10 @@ gui ツールの action 一覧:
 {"task_summary":"test.txtをDocumentsへ移動","steps":[{"step_id":1,"tool":"filesystem","action":"move","src":"~/test.txt","dst":"~/Documents/","description":"test.txtを移動","danger_level":1,"on_error":"abort"}]}
 
 注意: ファイルのコピー・移動・削除は shell の mv/cp/rm ではなく必ず filesystem ツールを使う。
+filesystemツールの action は必ず copy / move / delete / mkdir のいずれかを使う。rm / del / remove は不正。
+
+正しい例（filesystem - ファイル削除）:
+{"task_summary":"古いPDFを削除","steps":[{"step_id":1,"tool":"shell","command":"find ~/Documents -name '*.pdf' -mtime +30","description":"30日以上前のPDFを検索","danger_level":0,"capture_output":true,"on_error":"abort"},{"step_id":2,"tool":"filesystem","action":"delete","src":"$prev","description":"検索結果のPDFを削除","danger_level":2,"on_error":"abort"}]}
 
 正しい例（filesystem - PDFをDocumentsへ移動）:
 {"task_summary":"PDFをDocumentsへ移動","steps":[{"step_id":1,"tool":"shell","command":"ls ~/Downloads/*.pdf","description":"PDFを確認","danger_level":0,"on_error":"abort"},{"step_id":2,"tool":"filesystem","action":"move","src":"~/Downloads/*.pdf","dst":"~/Documents/","description":"PDFを移動","danger_level":1,"on_error":"abort"}]}
