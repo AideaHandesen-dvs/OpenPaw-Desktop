@@ -73,6 +73,8 @@ gui ツールの action 一覧:
 - shell ステップには command フィールドが必須
 - danger_level は 0〜3 の整数
 - パスは ~/ 形式を使う
+- dbus を使う場合、提示されたメソッド一覧に存在するメソッドのみを使うこと
+- 提示されたメソッドでタスクを達成できない場合は dbus を使わず shell または filesystem を使うこと
 """ + f"- 現在のユーザーは {_USER}、ホームディレクトリは {_HOME} です\n"
 
 
@@ -272,11 +274,29 @@ class TaskPlanner:
         if not result.success:
             return ""
 
-        # メソッド行のみ抽出（標準 DBus インターフェースの行は除く）
+        # メソッド行を抽出。標準 DBus インターフェース（org.freedesktop.*）は除外する。
+        # busctl の出力はインターフェース行 → メソッド行の順なので、
+        # 現在のインターフェースを追跡してフィルタリングする。
+        SKIP_PREFIXES = (
+            "org.freedesktop.DBus.Properties",
+            "org.freedesktop.DBus.Introspectable",
+            "org.freedesktop.DBus.Peer",
+        )
+        skip_section = False
         lines = []
         for line in result.output.splitlines():
             parts = line.split()
-            if len(parts) >= 2 and parts[0].startswith(".") and parts[1] == "method":
+            if not parts:
+                continue
+            # インターフェース行（先頭がドットなし、2列目が "interface"）
+            if len(parts) >= 2 and parts[1] == "interface":
+                skip_section = any(parts[0].startswith(p) for p in SKIP_PREFIXES)
+                continue
+            # メソッド行
+            if (not skip_section
+                    and len(parts) >= 2
+                    and parts[0].startswith(".")
+                    and parts[1] == "method"):
                 lines.append(line.strip())
 
         return "\n".join(lines)
