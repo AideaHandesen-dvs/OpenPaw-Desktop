@@ -109,6 +109,12 @@ class SafetyChecker:
 
         # ---- 2. パス制限チェック ----------------------------------- #
         paths_to_check = [p for p in (src, dst) if p and p != "$prev"]
+
+        # shell コマンドに含まれる絶対パス・ホームパスも抽出して検証（ベストエフォート）
+        # 相対パス (./foo, ../bar) は cwd が不明なため対象外（既知の限界）
+        if tool == "shell" and command:
+            paths_to_check.extend(self._extract_paths_from_command(command))
+
         for p in paths_to_check:
             if not self._is_allowed_path(p):
                 return CheckResult(
@@ -210,6 +216,37 @@ class SafetyChecker:
             if " " in pattern and pattern in cmd_stripped:
                 return True
         return False
+
+    def _extract_paths_from_command(self, command: str) -> list[str]:
+        """
+        コマンド文字列からパス候補を抽出する（ベストエフォート）。
+
+        抽出対象:
+          - 絶対パス: "/" で始まるトークン
+          - ホーム相対パス: "~/" で始まるトークン
+
+        既知の限界:
+          - 相対パス (./foo, ../bar) は cwd が不明なため対象外
+          - スペースを含むパスの完全な処理は未対応
+        """
+        if not command:
+            return []
+
+        # クォート除去（簡易）
+        cleaned = re.sub(r'"([^"]*)"', r'\1', command)  # ダブルクォート
+        cleaned = re.sub(r"'([^']*)'", r'\1', cleaned)  # シングルクォート
+
+        # リダイレクト・パイプ・セミコロンをスペースに変換
+        cleaned = re.sub(r'[|><&;]', ' ', cleaned)
+
+        paths = []
+        for token in cleaned.split():
+            if token.startswith('-'):   # フラグはスキップ
+                continue
+            if token.startswith('/') or token.startswith('~/'):
+                paths.append(token)
+
+        return paths
 
     def _is_allowed_path(self, path: str) -> bool:
         """
