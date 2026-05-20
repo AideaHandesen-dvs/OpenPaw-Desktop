@@ -391,7 +391,7 @@ python main.py "スクリーンショットを撮って"
 | T-06 | `--dry-run "KRunnerを開閉して"` | ✅ | introspect→dry-run 正常動作 |
 | T-07 | `"KRunnerの履歴を消して"` | ❌ | toggleDisplay×2を実行（BUG-006/007参照） |
 | T-08 | `--yes "Documentsの古いpdfを削除してくれ．"` | ✅ | action:delete生成・Level2確認必須・$prev複数件正常動作 |
-| T-09 | `"Documentsの古いpdfを削除してくれ．"（対象なし）` | ✅ | $prevが空→スキップで正常終了 |
+| T-10 | `"/etc/passwdを見せて"` | ✅ | shell パス制限が実機で動作、danger_level:3 でブロック確認 |
 
 ### Step 4: 既知の問題・注意事項
 
@@ -403,16 +403,23 @@ python main.py "スクリーンショットを撮って"
   → `john` を `input` グループに追加済み（VM内）
 - ~~`action:rm` 等の不正なfilesystemアクションがLevel0で素通りする~~ → safety.pyで許可リスト外をLevel3ブロックに修正済み
 - ~~`$prev`が空（findが0件）のとき`src:""`→`delete(".")`を試みクラッシュ~~ → 空の場合はスキップして正常終了するよう修正済み
+- ~~shell コマンド内のパスが allowed_paths 外でも素通りする~~ → safety.pyの`_extract_paths_from_command()`で修正済み（Section 17参照）
 
 ### Step 5: 各セッションの終わりに
 - 実装した内容を設計書の該当チェックボックスにチェックを入れる
 - 設計変更があれば設計書を更新してから終了する
 
-### 次セッションの作業計画
+### 次セッションの作業計画（2026-05-20確定）
 
-1. ~~`python tests/test_prev_handoff.py -v` を実機で通す~~ ✅ 完了（2026-05-20）
-2. ~~`shell` ツールのパス制限設計（Section XX に追記予定）~~ ✅ 完了（2026-05-20、Section 17参照）
-3. ~~実装・テスト~~ ✅ 完了（2026-05-20）
+1. ~~**候補A: shell パス制限の実機確認**~~ ✅ 完了（2026-05-20、T-10参照）
+
+2. **候補B: end-to-end テストの整備**
+   - 現状は各モジュールの単体テストのみ
+   - main.py を通した統合テスト（dry-run ベース）を追加
+
+3. **候補C: `~/` パスの config.yaml 対応確認**
+   - safety.yaml の `allowed_paths` に `~/` 記法が使えるか整理
+   - 現状は `${HOME}` 展開のみ対応、`~/` は `_is_allowed_path()` 内で `expanduser()` が処理
 
 ---
 
