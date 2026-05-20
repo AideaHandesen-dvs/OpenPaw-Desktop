@@ -49,12 +49,9 @@ VALID_SHELL_PLAN = json.dumps({
     "task_summary": "ファイル一覧を確認する",
     "steps": [
         {
-            "step_id": 1,
             "tool": "shell",
             "description": "Downloadsのファイル一覧を表示",
             "command": "ls -la ~/Downloads",
-            "danger_level": 0,
-            "on_error": "abort",
         }
     ],
 })
@@ -63,22 +60,16 @@ VALID_FILESYSTEM_PLAN = json.dumps({
     "task_summary": "PDFをDocumentsに移動する",
     "steps": [
         {
-            "step_id": 1,
             "tool": "shell",
             "description": "PDFを検索",
             "command": "find ~/Downloads -name '*.pdf'",
-            "danger_level": 0,
-            "on_error": "abort",
         },
         {
-            "step_id": 2,
             "tool": "filesystem",
             "description": "PDFをDocumentsへ移動",
             "action": "move",
             "src": "~/Downloads/*.pdf",
             "dst": "~/Documents/",
-            "danger_level": 1,
-            "on_error": "abort",
         },
     ],
 })
@@ -98,6 +89,19 @@ class TestTaskPlannerParsing(unittest.TestCase):
         self.assertEqual(len(plan.steps), 1)
         self.assertEqual(plan.steps[0]["tool"], "shell")
         self.assertEqual(plan.steps[0]["command"], "ls -la ~/Downloads")
+
+    def test_step_id_assigned_by_code(self):
+        """step_id はコードが連番で付与する（LLMが出力しなくてよい）。"""
+        planner = TaskPlanner(client=MockOllamaClient(VALID_FILESYSTEM_PLAN))
+        plan = planner.plan("PDFをDocumentsに移動して")
+        self.assertEqual(plan.steps[0]["step_id"], 1)
+        self.assertEqual(plan.steps[1]["step_id"], 2)
+
+    def test_on_error_default_set_by_code(self):
+        """on_error はコードがデフォルト値 'abort' を補完する（LLMが出力しなくてよい）。"""
+        planner = TaskPlanner(client=MockOllamaClient(VALID_SHELL_PLAN))
+        plan = planner.plan("テスト")
+        self.assertEqual(plan.steps[0]["on_error"], "abort")
 
     def test_filesystem_plan_parsed(self):
         planner = TaskPlanner(client=MockOllamaClient(VALID_FILESYSTEM_PLAN))
@@ -133,8 +137,7 @@ class TestTaskPlannerValidation(unittest.TestCase):
 
     def test_missing_task_summary_raises(self):
         bad = json.dumps({"steps": [
-            {"step_id": 1, "tool": "shell", "description": "x",
-             "command": "ls", "danger_level": 0, "on_error": "abort"}
+            {"tool": "shell", "description": "x", "command": "ls"}
         ]})
         with self.assertRaises(PlannerError):
             self._planner(bad).plan("テスト")
@@ -151,8 +154,7 @@ class TestTaskPlannerValidation(unittest.TestCase):
 
     def test_shell_missing_command_raises(self):
         bad = json.dumps({"task_summary": "テスト", "steps": [
-            {"step_id": 1, "tool": "shell", "description": "x",
-             "danger_level": 0, "on_error": "abort"}
+            {"tool": "shell", "description": "x"}
             # command なし
         ]})
         with self.assertRaises(PlannerError):
@@ -160,8 +162,7 @@ class TestTaskPlannerValidation(unittest.TestCase):
 
     def test_filesystem_missing_action_raises(self):
         bad = json.dumps({"task_summary": "テスト", "steps": [
-            {"step_id": 1, "tool": "filesystem", "description": "x",
-             "src": "~/file.txt", "danger_level": 1, "on_error": "abort"}
+            {"tool": "filesystem", "description": "x", "src": "~/file.txt"}
             # action なし
         ]})
         with self.assertRaises(PlannerError):
@@ -169,26 +170,16 @@ class TestTaskPlannerValidation(unittest.TestCase):
 
     def test_filesystem_move_missing_dst_raises(self):
         bad = json.dumps({"task_summary": "テスト", "steps": [
-            {"step_id": 1, "tool": "filesystem", "description": "x",
-             "action": "move", "src": "~/file.txt",
-             "danger_level": 1, "on_error": "abort"}
+            {"tool": "filesystem", "description": "x",
+             "action": "move", "src": "~/file.txt"}
             # dst なし
-        ]})
-        with self.assertRaises(PlannerError):
-            self._planner(bad).plan("テスト")
-
-    def test_invalid_danger_level_raises(self):
-        bad = json.dumps({"task_summary": "テスト", "steps": [
-            {"step_id": 1, "tool": "shell", "description": "x",
-             "command": "ls", "danger_level": 99, "on_error": "abort"}
         ]})
         with self.assertRaises(PlannerError):
             self._planner(bad).plan("テスト")
 
     def test_invalid_tool_raises(self):
         bad = json.dumps({"task_summary": "テスト", "steps": [
-            {"step_id": 1, "tool": "browser", "description": "x",
-             "danger_level": 0, "on_error": "abort"}
+            {"tool": "browser", "description": "x"}
         ]})
         with self.assertRaises(PlannerError):
             self._planner(bad).plan("テスト")
@@ -234,19 +225,15 @@ class TestEnforceDbusMethodsBUG006(unittest.TestCase):
     SHELL_FALLBACK_PLAN = json.dumps({
         "task_summary": "shellでKRunner履歴をクリアする",
         "steps": [{
-            "step_id": 1,
             "tool": "shell",
             "description": "krunnerrcから履歴を削除",
             "command": "sed -i '/history/d' ~/.config/krunnerrc",
-            "danger_level": 1,
-            "on_error": "abort",
         }],
     })
 
     DBUS_PLAN_WITH_INVALID_METHOD = json.dumps({
         "task_summary": "KRunner履歴をクリアする",
         "steps": [{
-            "step_id": 1,
             "tool": "dbus",
             "action": "call",
             "service": "org.kde.krunner",
@@ -257,8 +244,6 @@ class TestEnforceDbusMethodsBUG006(unittest.TestCase):
             "arg_types": [],
             "bus": "session",
             "description": "履歴をクリア",
-            "danger_level": 1,
-            "on_error": "abort",
         }],
     })
 
@@ -291,7 +276,6 @@ class TestEnforceDbusMethodsBUG006(unittest.TestCase):
         DBUS_PLAN_WITH_VALID_METHOD = json.dumps({
             "task_summary": "KRunnerを開閉する",
             "steps": [{
-                "step_id": 1,
                 "tool": "dbus",
                 "action": "call",
                 "service": "org.kde.krunner",
@@ -302,8 +286,6 @@ class TestEnforceDbusMethodsBUG006(unittest.TestCase):
                 "arg_types": [],
                 "bus": "session",
                 "description": "KRunnerを開閉する",
-                "danger_level": 1,
-                "on_error": "abort",
             }],
         })
         mock = MockOllamaClient(VALID_SHELL_PLAN)  # フォールバックは呼ばれないはず
@@ -324,15 +306,12 @@ class TestEnforceDbusMethodsBUG006(unittest.TestCase):
         INTROSPECT_PLAN = json.dumps({
             "task_summary": "introspect",
             "steps": [{
-                "step_id": 1,
                 "tool": "dbus",
                 "action": "introspect",  # call ではない
                 "service": "org.kde.krunner",
                 "object": "/App",
                 "interface": "org.kde.krunner.App",
                 "description": "introspect",
-                "danger_level": 0,
-                "on_error": "abort",
             }],
         })
         mock = MockOllamaClient(VALID_SHELL_PLAN)

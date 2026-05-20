@@ -47,48 +47,41 @@ gui ツールの action 一覧:
 重要: tool が "gui" のステップは "action" フィールドを使う。"command" フィールドは使わない。
 
 正しい例（gui/screenshot）:
-{"task_summary":"スクリーンショットを撮る","steps":[{"step_id":1,"tool":"gui","action":"screenshot","description":"スクリーンショットを撮影する","danger_level":0,"on_error":"abort"}]}
+{"task_summary":"スクリーンショットを撮る","steps":[{"tool":"gui","action":"screenshot","description":"スクリーンショットを撮影する"}]}
 
 正しい例（gui/key）:
-{"task_summary":"コピーする","steps":[{"step_id":1,"tool":"gui","action":"key","keys":"ctrl+c","description":"コピー","danger_level":1,"on_error":"abort"}]}
+{"task_summary":"コピーする","steps":[{"tool":"gui","action":"key","keys":"ctrl+c","description":"コピー"}]}
 
 正しい例（shell）:
-{"task_summary":"ファイル確認","steps":[{"step_id":1,"tool":"shell","command":"ls ~/Downloads","description":"一覧確認","danger_level":0,"on_error":"abort"}]}
-
+{"task_summary":"ファイル確認","steps":[{"tool":"shell","command":"ls ~/Downloads","description":"一覧確認"}]}
 
 正しい例（filesystem - ファイル移動）:
-{"task_summary":"test.txtをDocumentsへ移動","steps":[{"step_id":1,"tool":"filesystem","action":"move","src":"~/test.txt","dst":"~/Documents/","description":"test.txtを移動","danger_level":1,"on_error":"abort"}]}
+{"task_summary":"test.txtをDocumentsへ移動","steps":[{"tool":"filesystem","action":"move","src":"~/test.txt","dst":"~/Documents/","description":"test.txtを移動"}]}
 
 注意: ファイルのコピー・移動・削除は shell の mv/cp/rm ではなく必ず filesystem ツールを使う。
 filesystemツールの action は必ず copy / move / delete / mkdir のいずれかを使う。rm / del / remove は不正。
 
 正しい例（filesystem - ファイル削除）:
-{"task_summary":"古いPDFを削除","steps":[{"step_id":1,"tool":"shell","command":"find ~/Documents -name '*.pdf' -mtime +30","description":"30日以上前のPDFを検索","danger_level":0,"capture_output":true,"on_error":"abort"},{"step_id":2,"tool":"filesystem","action":"delete","src":"$prev","description":"検索結果のPDFを削除","danger_level":2,"on_error":"abort"}]}
+{"task_summary":"古いPDFを削除","steps":[{"tool":"shell","command":"find ~/Documents -name '*.pdf' -mtime +30","description":"30日以上前のPDFを検索","capture_output":true},{"tool":"filesystem","action":"delete","src":"$prev","description":"検索結果のPDFを削除"}]}
 
 正しい例（filesystem - PDFをDocumentsへ移動）:
-{"task_summary":"PDFをDocumentsへ移動","steps":[{"step_id":1,"tool":"shell","command":"ls ~/Downloads/*.pdf","description":"PDFを確認","danger_level":0,"on_error":"abort"},{"step_id":2,"tool":"filesystem","action":"move","src":"~/Downloads/*.pdf","dst":"~/Documents/","description":"PDFを移動","danger_level":1,"on_error":"abort"}]}
+{"task_summary":"PDFをDocumentsへ移動","steps":[{"tool":"shell","command":"ls ~/Downloads/*.pdf","description":"PDFを確認"},{"tool":"filesystem","action":"move","src":"~/Downloads/*.pdf","dst":"~/Documents/","description":"PDFを移動"}]}
 
 正しい例（条件付き移動 - 古いPDFだけDocumentsへ移動）:
-{"task_summary":"古いPDFをDocumentsへ移動","steps":[{"step_id":1,"tool":"shell","command":"find ~/Downloads -name '*.pdf' -mtime +30","description":"30日以上前のPDFを検索","danger_level":0,"capture_output":true,"on_error":"abort"},{"step_id":2,"tool":"filesystem","action":"move","src":"$prev","dst":"~/Documents/","description":"検索結果のPDFを移動","danger_level":1,"on_error":"abort"}]}
+{"task_summary":"古いPDFをDocumentsへ移動","steps":[{"tool":"shell","command":"find ~/Downloads -name '*.pdf' -mtime +30","description":"30日以上前のPDFを検索","capture_output":true},{"tool":"filesystem","action":"move","src":"$prev","dst":"~/Documents/","description":"検索結果のPDFを移動"}]}
 
 重要: 「古いファイルだけ」「サイズが大きいものだけ」など絞り込みが必要な場合:
 - Step1: shell で find コマンドを使い、\"capture_output\": true を必ず付ける
 - Step2: filesystem の src を \"$prev\" にする（前ステップの出力がそのまま渡される）
 - $prev は必ず src フィールドにのみ使う。dst には使わない
-誤った例（gui なのに command を使っている）:
 
 正しい例（dbus）:
-{"task_summary":"KRunnerを開閉する","steps":[{"step_id":1,"tool":"dbus","action":"call","service":"org.kde.krunner","object":"/App","interface":"org.kde.krunner.App","method":"toggleDisplay","args":[],"arg_types":[],"bus":"session","description":"KRunnerを開閉する","danger_level":1,"on_error":"abort"}]}
-{"step_id":1,"tool":"gui","command":"gui:action=screenshot"} ← これは間違い
-
-正しい例（gui なのに action を使っている）:
-{"step_id":1,"tool":"gui","action":"screenshot"} ← これが正しい
+{"task_summary":"KRunnerを開閉する","steps":[{"tool":"dbus","action":"call","service":"org.kde.krunner","object":"/App","interface":"org.kde.krunner.App","method":"toggleDisplay","args":[],"arg_types":[],"bus":"session","description":"KRunnerを開閉する"}]}
 
 ルール:
 - スクリーンショットは必ず tool: gui, action: screenshot を使う
 - gui ステップには action フィールドが必須（command は不要）
 - shell ステップには command フィールドが必須
-- danger_level は 0〜3 の整数
 - パスは ~/ 形式を使う
 - dbus を使う場合、提示されたメソッド一覧に存在するメソッドのみを使うこと
 - 提示されたメソッドでタスクを達成できない場合は dbus を使わず shell または filesystem を使うこと
@@ -441,6 +434,12 @@ class TaskPlanner:
         if len(data["steps"]) == 0:
             raise PlannerError("steps が空です")
 
+        # step_id を連番でコードが付与（LLMに生成させない）
+        # on_error はコードがデフォルト値を補完（LLMに生成させない）
+        for i, step in enumerate(data["steps"], 1):
+            step["step_id"] = i
+            step.setdefault("on_error", "abort")
+
         # gui ステップの正規化（LLM が command に詰め込んだ場合の救済）
         for step in data["steps"]:
             self._normalize_gui_step(step)
@@ -494,8 +493,10 @@ class TaskPlanner:
         )
 
     def _validate_step(self, step: dict, index: int) -> None:
-        """1ステップのフィールドを検証する。"""
-        required = ("step_id", "tool", "description", "danger_level", "on_error")
+        """1ステップのフィールドを検証する。
+        danger_level / on_error / step_id はコードが付与するため検証しない。
+        """
+        required = ("tool", "description")
         for field in required:
             if field not in step:
                 raise PlannerError(f"ステップ {index}: '{field}' フィールドがありません")
@@ -516,7 +517,3 @@ class TaskPlanner:
                 raise PlannerError(
                     f"ステップ {index}: filesystem {step['action']} に 'dst' がありません"
                 )
-
-        dl = step.get("danger_level")
-        if not isinstance(dl, int) or dl < 0 or dl > 3:
-            raise PlannerError(f"ステップ {index}: danger_level が不正: {dl!r}")

@@ -70,30 +70,30 @@ Audit Logger
 
 LLMが生成するJSONの構造。Ollamaの`format: json`で強制する。
 
+**LLMが生成するフィールド:** `task_summary`, `steps`, `tool`, `description`, `command`, `src`, `dst`, `action`, `service`, `object`, `interface`, `method`, `property`, `args`, `arg_types`, `bus`, `keys`, `text`, `delay`, `x`, `y`, `button`, `count`, `direction`, `amount`, `target`, `path`, `capture_output`
+
+**コードが付与するフィールド（LLMに生成させない）:**
+- `step_id`: executorが連番で付与
+- `danger_level`: safety.pyが判定して上書き
+- `on_error`: plannerが`"abort"`をデフォルト補完
+
 ```json
 {
   "task_summary": "タスクの一行説明",
   "steps": [
     {
-      "step_id": 1,
       "tool": "shell",
       "description": "このステップが何をするかの説明",
-      "command": "ls -la ~/Downloads",
-      "danger_level": 0,
-      "on_error": "abort"
+      "command": "ls -la ~/Downloads"
     },
     {
-      "step_id": 2,
       "tool": "filesystem",
       "description": "PDFをDocumentsへ移動",
       "action": "move",
       "src": "~/Downloads/*.pdf",
-      "dst": "~/Documents/",
-      "danger_level": 1,
-      "on_error": "abort"
+      "dst": "~/Documents/"
     },
     {
-      "step_id": 3,
       "tool": "dbus",
       "description": "KRunnerを開閉する",
       "action": "call",
@@ -103,9 +103,7 @@ LLMが生成するJSONの構造。Ollamaの`format: json`で強制する。
       "method": "toggleDisplay",
       "args": [],
       "arg_types": [],
-      "bus": "session",
-      "danger_level": 1,
-      "on_error": "abort"
+      "bus": "session"
     }
   ]
 }
@@ -113,27 +111,27 @@ LLMが生成するJSONの構造。Ollamaの`format: json`で強制する。
 
 ### フィールド定義
 
-| フィールド | 型 | 必須 | 説明 |
-|-----------|-----|------|------|
-| `task_summary` | string | ✅ | タスク全体の一行説明 |
-| `steps` | array | ✅ | 実行ステップのリスト |
-| `step_id` | int | ✅ | ステップ番号（1始まり） |
-| `tool` | enum | ✅ | `shell` / `filesystem` / `dbus` / `gui` |
-| `description` | string | ✅ | ステップの人間向け説明 |
-| `command` | string | shellのみ必須 | 実行するbashコマンド |
-| `src` | string | filesystemのみ必須 | 操作元パス |
-| `dst` | string | copy/moveのみ必須 | 操作先パス |
-| `danger_level` | int | ✅ | 0〜3（下記参照） |
-| `on_error` | enum | ✅ | 現在は`abort`のみ |
-| `action` | string | filesystem/dbusのみ必須 | filesystem: `copy` / `move` / `delete` / `mkdir`<br>dbus: `call` / `get` / `set` / `list` / `introspect` |
-| `service`   | string | dbusのみ必須      | D-Busバス名 e.g. `org.kde.krunner` |
-| `object`    | string | dbusのみ必須      | オブジェクトパス e.g. `/App` |
-| `interface` | string | dbusのみ必須      | インターフェース名 e.g. `org.kde.krunner.App` |
-| `method`    | string | `call`のみ必須    | 呼び出すメソッド名 |
-| `property`  | string | `get`/`set`のみ必須 | 対象プロパティ名 |
-| `args`      | array  | 任意              | メソッド/プロパティへの引数リスト |
-| `arg_types` | array  | 任意              | busctl型シグネチャ e.g. `["s","i"]`。省略時はintrospectで自動取得。複合型（`a`系）は未対応 |
-| `bus`       | string | 任意              | `session`（デフォルト）または `system` |
+| フィールド | 型 | 生成元 | 説明 |
+|-----------|-----|--------|------|
+| `task_summary` | string | LLM | タスク全体の一行説明 |
+| `steps` | array | LLM | 実行ステップのリスト |
+| `step_id` | int | **コード** | executorが連番付与（LLM生成不要） |
+| `tool` | enum | LLM | `shell` / `filesystem` / `dbus` / `gui` |
+| `description` | string | LLM | ステップの人間向け説明 |
+| `command` | string | LLM | shellのみ必須 |
+| `src` | string | LLM | filesystemのみ必須 |
+| `dst` | string | LLM | copy/moveのみ必須 |
+| `danger_level` | int | **safety.py** | 0〜3（LLM生成不要、コードが判定・上書き） |
+| `on_error` | enum | **コード** | plannerが`"abort"`を補完（LLM生成不要） |
+| `action` | string | LLM | filesystem/dbusのみ必須 |
+| `service`   | string | LLM | dbusのみ必須 |
+| `object`    | string | LLM | dbusのみ必須 |
+| `interface` | string | LLM | dbusのみ必須 |
+| `method`    | string | LLM | `call`のみ必須 |
+| `property`  | string | LLM | `get`/`set`のみ必須 |
+| `args`      | array  | LLM | 任意 |
+| `arg_types` | array  | LLM | 任意 |
+| `bus`       | string | LLM | 任意（デフォルト`session`） |
 
 #### gui ツール固有フィールド
 
@@ -409,17 +407,22 @@ python main.py "スクリーンショットを撮って"
 - 実装した内容を設計書の該当チェックボックスにチェックを入れる
 - 設計変更があれば設計書を更新してから終了する
 
-### 次セッションの作業計画（2026-05-20確定）
+### 次セッションの作業計画（2026-05-20更新）
 
 1. ~~**候補A: shell パス制限の実機確認**~~ ✅ 完了（2026-05-20、T-10参照）
 
-2. **候補B: end-to-end テストの整備**
+2. ~~**LLMに判断させるべきでないフィールドの除去**~~ ✅ 完了（2026-05-20）
+   - `step_id`・`danger_level`・`on_error` をLLM生成対象から除外
+   - `planner.py`: SYSTEM_PROMPT簡素化、`_parse`でコード付与、`_validate_step`から3フィールド除去
+   - `tests/test_planner.py`: モックデータ更新、`test_invalid_danger_level_raises`削除
+   - 全269テスト通過確認済み
+
+3. **候補B: end-to-end テストの整備**
    - 現状は各モジュールの単体テストのみ
    - main.py を通した統合テスト（dry-run ベース）を追加
 
-3. **候補C: `~/` パスの config.yaml 対応確認**
+4. **候補C: `~/` パスの config.yaml 対応確認**
    - safety.yaml の `allowed_paths` に `~/` 記法が使えるか整理
-   - 現状は `${HOME}` 展開のみ対応、`~/` は `_is_allowed_path()` 内で `expanduser()` が処理
 
 ---
 
